@@ -35,6 +35,7 @@ Build to that plan; if a file needs to differ, update the plan in the same chang
 - The same image runs the server, `migrate` and `seed`; only the command differs.
 - `.dockerignore` keeps `node_modules`, `.env*`, `.git`, `infra/`, `.adlc/` and `.claude/` out of the build context.
 - Root `docker-compose.yml` is for local runs and reviewers (`docker compose up --build` works with only `.env.example` copied to `.env`).
+- The `Caddyfile` adds `Strict-Transport-Security`; the app sets the other security headers itself.
 - `deploy/docker-compose.prod.yml` is for the server: ECR image by commit SHA, Caddy, Postgres data on `/data/postgres`, `awslogs` logging, no port published except Caddy's 80 and 443.
 - Start order is enforced: `db` healthy, then `migrate` completes successfully, then `app` starts.
 
@@ -47,6 +48,6 @@ Build to that plan; if a file needs to differ, update the plan in the same chang
 
 ## Workflows
 
-- `ci.yml`: install, lint, typecheck, tests against a Postgres service, pgtyped drift check, web build, `terraform fmt -check` and `validate`.
+- `ci.yml`: install, lint, typecheck, tests (testcontainers, as locally), pgtyped drift check (a Postgres service container, migrate, regenerate, fail on any difference), web build, `terraform fmt -check` and `validate`.
 - `deploy.yml`: on push to `main` after CI, `id-token: write`, native ARM runner, one deploy at a time (`concurrency`).
 - Actions are pinned to a full commit SHA, not a moving tag.

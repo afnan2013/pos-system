@@ -70,18 +70,22 @@ Dependencies point down only.
 
 - `AppError` carries a `kind`: `validation` 400, `unauthorized` 401, `forbidden` 403, `not_found` 404, `conflict` 409, `invalid_reference` 400, `too_large` 413, `rate_limited` 429, `unavailable` 503, `canceled` 499, `unexpected` 500.
 - Area errors are declared once in `<thing>.ts` (`export const ErrInsufficientStock = conflict('Not enough stock')`) and checked by identity or `kindOf`.
-- `mapPgError`: 23505 -> conflict, 23503 -> invalid_reference, 23514 -> validation with a generic title (constraint name only in the log), 57014 / 55P03 / 25P03 / 53300 and connection errors -> unavailable; anything else stays unexpected.
+- `mapPgError`: 23505 -> conflict, 23503 -> invalid_reference, 23001 (restrict violation: still referenced) -> conflict, 23514 -> validation with a generic title (constraint name only in the log), 40001 / 40P01 (serialization failure, deadlock) and 57014 / 55P03 / 25P03 / 53300 and connection errors -> unavailable; anything else stays unexpected.
+- An area error that must name the item uses `withTitle(ErrInsufficientStock, ...)`; callers match it with `isError(err, ErrInsufficientStock)`, which walks the `cause` chain.
 - **`errorHandler` is the only code that writes an error body**: RFC 7807 `application/problem+json` with `type`, `title`, `status`, `instance`, `requestId`, and `errors` only for validation; `Cache-Control: no-store`; 500s never leak internals.
 - If headers were already sent, `errorHandler` logs and destroys the socket instead of writing a body.
 - Express 5 forwards thrown errors and rejected promises to `errorHandler`; `unhandledRejection` and `uncaughtException` log at fatal and exit, and Docker restarts the container.
-- The router's 404 and 405 also go through `errorHandler`.
+- An unknown path gives 404 through `notFound`; a known path with the wrong method gives 405 through `methodNotAllowed` (slug `method-not-allowed`); both go through `errorHandler`.
+- `canceled` (499) comes from the request's `AbortSignal` in the request context, aborted when the client disconnects.
 
 ## Middleware chain (outermost first)
 
-`requestId -> requestLog -> express.json (1 MB limit) -> routes -> authenticate (per route) -> requirePermission (per route) -> controller -> errorHandler`
+`requestId -> securityHeaders -> requestLog -> jsonBody (1 MB limit) -> routes -> authenticate (per route) -> requirePermission (per route) -> controller -> errorHandler`
 
 - `requestId`: keep an incoming `X-Request-Id` only if it is 1-64 chars of `[A-Za-z0-9._-]`, else generate a UUIDv7; set the response header; open the AsyncLocalStorage request context with a child logger carrying `requestId`.
 - `requestLog`: exactly one info line per request on `finish` or `close`: `method`, `route` (the pattern, never the raw path; `unmatched` if none), `status`, `durationMs`, `bytes`, `requestId`, plus `userId` and `outletId` when authenticated.
+- `securityHeaders` sets `X-Content-Type-Options`, `Referrer-Policy`, `X-Frame-Options` and the web app's `Content-Security-Policy` with no extra dependency; Caddy adds HSTS.
+- `jsonBody` wraps `express.json` and re-binds `next` with `AsyncResource.bind`, because the body parser otherwise loses the AsyncLocalStorage request context; a test pins it.
 - No CORS middleware: the browser always calls the same origin.
 
 ## Logging
@@ -110,7 +114,7 @@ Dependencies point down only.
 
 - Business routes under `/api/v1`; health at `/healthz` and `/readyz`.
 - Plural resources; outlet-owned data under `/api/v1/outlets/:outletId/...`.
-- Lists that grow (sales) use keyset pagination (`?after=<cursor>&limit=50`), never offset.
+- Lists that grow (sales) use keyset pagination by `receipt_number DESC` (`?after=<cursor>&limit=50`, at most 100, response `{ items, nextCursor }`), never offset; other lists return everything.
 - `POST /api/v1/outlets/:outletId/sales` accepts an `Idempotency-Key` header; a repeat returns the original sale. Offline sync depends on this.
 
 ## Access control
@@ -119,10 +123,12 @@ Dependencies point down only.
 - The token carries `sub` (user ID), `outletId` (or null for HQ users) and `perms` (permission keys).
 - `authenticate` is named on each protected route, never global; public routes simply omit it. It puts a `Principal` in the request context.
 - `requirePermission(...keys)` per route: 403 unless the token holds at least one key.
+  HQ read screens accept any related key: `GET /outlets*` takes `outlets.manage`, `menu.assign` or `inventory.manage`; `GET /menu-items*` takes `menu.manage` or `menu.assign`.
 - **Outlet scope is checked in the service**, not middleware: an outlet user may act only on their own `outletId`; an HQ user may act on any outlet. A mismatch is 403.
 - Permission keys are `area.action` (`menu.manage`, `sales.create`, `reports.read`) and are defined only in `src/modules/roles/permission.ts`; `cli/migrate.ts` syncs them into the database.
 - Built-in roles are locked so HQ cannot remove its own access; HQ can create and edit every other role.
-- Login errors are generic ("Invalid email or password").
+- Login errors are generic ("Invalid email or password"), and an unknown email still verifies a dummy hash so timing reveals nothing.
+- Tokens are verified without a database call, so disabling a user or changing a role takes effect at their next sign-in, at most `ACCESS_TOKEN_TTL` later.
 
 ## Naming
 
@@ -135,6 +141,6 @@ Dependencies point down only.
 
 ## Testing
 
-- vitest for unit tests; supertest for routes; integration tests against real Postgres via testcontainers (required for anything touching transactions, constraints or migrations).
+- vitest for unit tests; supertest for routes; integration tests against real Postgres via testcontainers, locally and in CI (required for anything touching transactions, constraints or migrations).
 - No mocking the database in repository tests; fakes only for outside services.
 - Every use case has a happy-path test and a test per business rule it enforces.

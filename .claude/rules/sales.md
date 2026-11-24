@@ -16,7 +16,7 @@ Every rule below exists to keep stock and receipt numbers correct when many sale
 3. **Normalise lines:** merge duplicate menu items into one line, reject quantities below 1, then **sort by `menu_item_id`**.
    The sort fixes the lock order, so two concurrent sales can never deadlock on each other's rows.
 4. **Price the lines** with one query over the outlet's assignments: unit price is the outlet override, else the master price.
-   An item that is not assigned to the outlet, or is inactive, rejects the whole sale.
+   An item that is not assigned to the outlet, marked unavailable there, or inactive rejects the whole sale with 409 `ErrItemNotSellable`.
 5. **Deduct stock line by line**, in that sorted order, with a conditional update:
 
    ```sql
@@ -31,14 +31,16 @@ Every rule below exists to keep stock and receipt numbers correct when many sale
 
    ```sql
    UPDATE pos.outlet_receipt_counters
-      SET last_number = last_number + 1
+      SET last_number = last_number + 1, updated_at = now()
     WHERE outlet_id = :outletId!
    RETURNING last_number;
    ```
 
    The row lock makes concurrent sales at one outlet take numbers one after another; a rollback undoes the increment, so numbers have no gaps.
-7. **Insert the sale and its lines**, with totals computed in the service in integer minor units and each line's unit price and item name frozen.
+7. **Insert the sale, then its lines, then one `stock_movements` row per line** (reason `sale`, negative change, `sale_id`), in that order because of the foreign keys; totals are computed in the service in integer minor units, and each line's unit price and item name are frozen.
 8. Commit, then respond `201` with the sale and its receipt number.
+
+**Same key, same time:** if two requests carry the same `Idempotency-Key`, the second fails on `UNIQUE (outlet_id, idempotency_key)` at insert; its transaction rolls back (receipt number included), and it re-reads and returns the first sale with `201`.
 
 ## Never
 
