@@ -1160,15 +1160,12 @@ Postgres settings for 2 GiB of memory shared with the app and Caddy (proposed, p
 
 ### Backups
 
-- **EBS snapshots, daily:** the data volume is tagged `Backup = daily` and a Data Lifecycle Manager policy snapshots it every 24 hours, keeping the last 7 (`snapshot_retention_count`).
-  Postgres's data directory and its write-ahead log are on that one volume, so a snapshot is like a sudden power cut: Postgres replays the log on start and comes back consistent.
-- **What that gives:** up to 24 hours of sales lost in the worst case (the recovery point), and about 30 minutes to restore (create a volume from the snapshot, attach it, start the stack).
-- **Optional logical dump (proposed):** a nightly `pg_dump --format=custom` as `migrator`, run over SSM and copied to the deploy bucket under `backups/`, kept 30 days.
-  It survives the loss of the whole volume lineage, can be restored into any Postgres 18, and is how data would move to a managed database.
-  It needs a write permission on that bucket prefix for the instance role, which `docs/infrastructure.md` does not grant yet.
-- **Before a risky migration:** take a manual snapshot first.
-- **Restore drill (proposed), once before launch and then each quarter:** restore the latest snapshot into a scratch volume, start Postgres 18 on it, and check that row counts and the last receipt number per outlet look right.
-  A backup that has never been restored is not yet a backup.
+There are no backups in this deployment: it is a test instance, so there are no snapshots and no dumps.
+Postgres's data directory and its write-ahead log live on one encrypted EBS volume mounted at `/data`, and losing that volume loses the data.
+
+- **What protects the data:** the volume is separate from the server and Terraform cannot destroy it (`prevent_destroy`), so replacing or recovering the instance keeps it.
+- **What does not:** deleting the volume, a broken filesystem, or a bad migration; each of those is unrecoverable here.
+- **A real deployment would add** daily EBS snapshots, a nightly `pg_dump --format=custom` copied off the volume, or both, plus a restore drill; a backup that has never been restored is not yet a backup.
 - **Point-in-time recovery** needs continuous log archiving, which this setup does not have; it comes with a managed database (see Scaling path).
 
 ### Retention
@@ -1222,4 +1219,4 @@ At that size (about 100,000 sales, 300,000 sale lines and 300,000 stock movement
 - [ ] **Receipt number reset:** numbers never reset today.
   Do outlets want a yearly or daily reset (the counter would gain a period column)?
 - [ ] **Payment method on the sale:** cash, card or wallet is not recorded; adding it is a nullable column now or a `sale_payments` table later.
-- [ ] **Logical backups:** adopt the nightly `pg_dump` and grant its bucket permission, or rely on snapshots alone?
+- [ ] **Backups for a real deployment:** this test deployment has none; a real one needs EBS snapshots, a nightly `pg_dump` copied off the volume, or both, and the instance role would need permission to write wherever the dump goes.
