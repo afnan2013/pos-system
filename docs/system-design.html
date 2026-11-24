@@ -318,9 +318,9 @@ footer { color: var(--muted); font-size: 0.88rem; border-top: 1px solid var(--li
     </div>
     <div class="card">
       <div class="figure">
-        <svg viewBox="0 0 400 884" role="img" aria-labelledby="arch-title arch-desc">
+        <svg viewBox="0 0 400 828" role="img" aria-labelledby="arch-title arch-desc">
           <title id="arch-title">POS System architecture</title>
-          <desc id="arch-desc">The browser looks up the address in Route53 and connects over HTTPS to an Elastic IP on one EC2 server. On the server, Caddy handles HTTPS and forwards to the app container, which serves the API under /api/v1 and the React build, and talks to the Postgres container. Postgres data and Caddy certificates sit on a separate EBS volume. GitHub Actions pushes the image to ECR, the deploy bundle to S3, and runs deploy.sh on the server through SSM.</desc>
+          <desc id="arch-desc">The browser looks up the address in Route53 and connects over HTTPS to an Elastic IP on one EC2 server. On the server, Caddy handles HTTPS and forwards to the app container, which serves the API under /api/v1 and the React build, and talks to the Postgres container. Postgres data and Caddy certificates sit on a separate EBS volume. GitHub Actions pushes the image, with the deploy files inside it, to ECR, and through SSM the server pulls that image, copies the deploy files out of it and runs deploy.sh. There are no backups.</desc>
           <defs>
             <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
               <path class="head" d="M0,0 L10,5 L0,10 z"/>
@@ -386,44 +386,38 @@ footer { color: var(--muted); font-size: 0.88rem; border-top: 1px solid var(--li
           <rect class="n-vol" x="24" y="480" width="352" height="68" rx="8"/>
           <text class="t" x="200" y="502" text-anchor="middle">/data · separate EBS volume</text>
           <text class="ts" x="200" y="521" text-anchor="middle">Postgres data · Caddy certificates</text>
-          <text class="ts" x="200" y="538" text-anchor="middle">daily snapshots · never destroyed by Terraform</text>
+          <text class="ts" x="200" y="538" text-anchor="middle">no backups (test) · never destroyed by Terraform</text>
 
           <text class="tz" x="8" y="612">DELIVERY · ON PUSH TO MAIN</text>
           <text class="ts" x="372" y="600" text-anchor="end">used by deploy.sh</text>
 
-          <rect class="n-accent" x="8" y="622" width="160" height="158" rx="8"/>
-          <text class="t" x="88" y="688" text-anchor="middle">GitHub Actions</text>
-          <text class="ts" x="88" y="707" text-anchor="middle">builds the ARM image</text>
-          <text class="ts" x="88" y="724" text-anchor="middle">OIDC role, no keys</text>
+          <rect class="n-accent" x="8" y="622" width="160" height="102" rx="8"/>
+          <text class="t" x="88" y="660" text-anchor="middle">GitHub Actions</text>
+          <text class="ts" x="88" y="679" text-anchor="middle">builds the ARM image</text>
+          <text class="ts" x="88" y="696" text-anchor="middle">OIDC role, no keys</text>
 
           <path class="edge" d="M168,645 L208,645" marker-end="url(#arr)"/>
           <path class="edge" d="M168,701 L208,701" marker-end="url(#arr)"/>
-          <path class="edge" d="M168,757 L208,757" marker-end="url(#arr)"/>
           <text class="ta" x="188" y="639" text-anchor="middle">1</text>
           <text class="ta" x="188" y="695" text-anchor="middle">2</text>
-          <text class="ta" x="188" y="751" text-anchor="middle">3</text>
 
           <rect class="n" x="210" y="622" width="160" height="46" rx="8"/>
           <text class="t" x="290" y="642" text-anchor="middle">ECR</text>
-          <text class="tm" x="290" y="660" text-anchor="middle">image:&lt;sha&gt;</text>
+          <text class="tm" x="290" y="660" text-anchor="middle">image:&lt;sha&gt; + deploy/</text>
           <rect class="n" x="210" y="678" width="160" height="46" rx="8"/>
-          <text class="t" x="290" y="698" text-anchor="middle">S3 deploy bucket</text>
-          <text class="tm" x="290" y="716" text-anchor="middle">releases/&lt;sha&gt;/</text>
-          <rect class="n" x="210" y="734" width="160" height="46" rx="8"/>
-          <text class="t" x="290" y="754" text-anchor="middle">SSM Run Command</text>
-          <text class="tm" x="290" y="772" text-anchor="middle">deploy.sh &lt;sha&gt;</text>
+          <text class="t" x="290" y="698" text-anchor="middle">SSM Run Command</text>
+          <text class="tm" x="290" y="716" text-anchor="middle">deploy.sh &lt;sha&gt;</text>
 
           <path class="edge" d="M370,645 L386,645"/>
-          <path class="edge" d="M370,701 L386,701"/>
-          <path class="edge" d="M370,757 L386,757 L386,582" marker-end="url(#arr)"/>
+          <path class="edge" d="M370,701 L386,701 L386,582" marker-end="url(#arr)"/>
 
-          <text class="tz" x="8" y="812">ALSO ON AWS</text>
-          <rect class="n" x="8" y="822" width="188" height="50" rx="8"/>
-          <text class="t" x="102" y="843" text-anchor="middle">Parameter Store</text>
-          <text class="ts" x="102" y="861" text-anchor="middle">secrets, read by deploy.sh</text>
-          <rect class="n" x="204" y="822" width="188" height="50" rx="8"/>
-          <text class="t" x="298" y="843" text-anchor="middle">CloudWatch Logs</text>
-          <text class="ts" x="298" y="861" text-anchor="middle">every container, 14 days</text>
+          <text class="tz" x="8" y="756">ALSO ON AWS</text>
+          <rect class="n" x="8" y="766" width="188" height="50" rx="8"/>
+          <text class="t" x="102" y="787" text-anchor="middle">Parameter Store</text>
+          <text class="ts" x="102" y="805" text-anchor="middle">secrets and settings</text>
+          <rect class="n" x="204" y="766" width="188" height="50" rx="8"/>
+          <text class="t" x="298" y="787" text-anchor="middle">CloudWatch Logs</text>
+          <text class="ts" x="298" y="805" text-anchor="middle">every container, 7 days</text>
         </svg>
         <div>
           <ol class="notes">
@@ -431,8 +425,8 @@ footer { color: var(--muted); font-size: 0.88rem; border-top: 1px solid var(--li
             <li><b>Caddy</b> is the only container with open ports (80 and 443). It gets and renews the Let's Encrypt certificate by itself, adds <code>Strict-Transport-Security</code> <span class="prop">(proposed)</span>, and forwards every request to <code>app:3000</code>.</li>
             <li><b>The app container</b> runs Express. It answers <code>/api/v1/*</code>, <code>/healthz</code> and <code>/readyz</code>, and serves the built React app for every other path, so the browser and the API share one origin and need no CORS (cross-origin resource sharing) setup.</li>
             <li><b>Postgres</b> runs as a container on the same server, reachable only on the internal Docker network. The API connects as <code>pos_app</code> (data access only); <code>migrate</code> runs first as <code>migrator</code>, and the app starts only if it succeeds.</li>
-            <li><b>The data volume</b> is a separate EBS (Elastic Block Store) disk mounted at <code>/data</code>, snapshotted daily. Replacing the server never loses data or the certificate.</li>
-            <li><b>Delivery.</b> On every push to <code>main</code>, after CI passes, GitHub Actions signs in to AWS through OIDC (OpenID Connect, so no AWS keys are stored), pushes the image tagged with the commit SHA to ECR, uploads the <code>deploy/</code> files to S3, and runs <code>deploy.sh &lt;sha&gt;</code> on the server through SSM (Systems Manager). The script writes <code>.env</code> from Parameter Store, pulls, restarts, and fails the job if <code>/readyz</code> does not answer.</li>
+            <li><b>The data volume</b> is a separate EBS (Elastic Block Store) disk mounted at <code>/data</code>. Replacing the server never loses data or the certificate. There are no backups, because this is a test deployment: losing the volume loses the data.</li>
+            <li><b>Delivery.</b> On every push to <code>main</code>, after CI passes, GitHub Actions signs in to AWS through OIDC (OpenID Connect, so no AWS keys are stored), pushes the image tagged with the commit SHA to ECR with the <code>deploy/</code> files inside it, and sends a command through SSM (Systems Manager) that pulls that image, copies <code>deploy/</code> out of it and runs <code>deploy.sh &lt;sha&gt;</code>. The script writes <code>.env</code> from Parameter Store, pulls, starts the new containers, and fails the job if <code>/readyz</code> does not answer.</li>
             <li><b>No SSH.</b> Port 22 is closed. Shell access is an SSM session.</li>
           </ol>
           <p class="caption">Solid arrows carry traffic; dashed ones are DNS lookups, certificate renewal and the one-shot migration.</p>
@@ -518,7 +512,7 @@ footer { color: var(--muted); font-size: 0.88rem; border-top: 1px solid var(--li
         <span class="pick">Hosting</span>
         <h3>One EC2 server with containers, not managed services</h3>
         <p>Caddy, the app and Postgres run with Docker Compose on one <code>t4g.small</code>. It costs about $20 a month, is easy to reason about, and the same compose setup runs on a laptop. RDS, a load balancer and ECS would multiply the bill for traffic this system does not have.</p>
-        <p class="alt"><b>Trade-off:</b> one server is one point of failure, and we run Postgres ourselves. The separate data volume, daily snapshots and an automatic EC2 recover alarm limit the damage; moving to RDS is the first scaling step.</p>
+        <p class="alt"><b>Trade-off:</b> one server is one point of failure, and we run Postgres ourselves. The separate data volume and an automatic EC2 recover alarm limit the damage; there are no backups in this test deployment, and moving to RDS is the first scaling step.</p>
       </article>
       <article>
         <span class="pick">Edge</span>
@@ -822,13 +816,13 @@ RETURNING last_number;</pre>
           <tr><td>EC2 <code>t4g.small</code>, on demand</td><td class="num">$12-16</td></tr>
           <tr><td>Disks: 12 GB root + 20 GB data, gp3</td><td class="num">~$3</td></tr>
           <tr><td>Public IPv4 address (Elastic IP)</td><td class="num">~$3.65</td></tr>
-          <tr><td>EBS snapshots, ECR, S3, CloudWatch Logs</td><td class="num">under $1</td></tr>
+          <tr><td>ECR, SSM parameters, CloudWatch Logs</td><td class="num">under $1</td></tr>
           <tr><td>Route53 hosted zone</td><td class="num">already paid</td></tr>
           <tr class="total"><td>Total</td><td class="num">~$20-24</td></tr>
         </tbody>
       </table>
     </div>
-    <p class="caption col">The infrastructure plan rounds this to "about $20"; the line items add up to $19-24 depending on region. Nothing here scales with sales volume except logs and snapshots.</p>
+    <p class="caption col">The infrastructure plan rounds this to "about $20"; the line items add up to $19-24 depending on region. Nothing here scales with sales volume except logs.</p>
   </section>
 
   <section id="grow">
@@ -866,7 +860,7 @@ RETURNING last_number;</pre>
       <li><b>Report day boundaries</b><span>Are <code>from</code> and <code>to</code> UTC instants or the outlet's local day, and is <code>to</code> inclusive?</span></li>
       <li><b>Sign-in rate limiting</b><span>No edge limit in this build; an in-app limit on <code>/auth/login</code> would use the <code>rate_limited</code> error kind.</span></li>
       <li><b>Database TLS on the host network</b><span>Connections never leave the Docker network, so TLS is relaxed for <code>db</code>; recorded as an ADR (architecture decision record) in the foundation.</span></li>
-      <li><b>Backups beyond snapshots</b><span>Daily EBS snapshots only. Add a nightly <code>pg_dump</code> to S3 as a copy off the volume?</span></li>
+      <li><b>Backups</b><span>None in this test deployment. A real one would add EBS snapshots, a nightly <code>pg_dump</code> copied off the volume, or both.</span></li>
       <li><b>Alarm notifications</b><span>The EC2 recover alarm acts on its own but tells no one. Email or chat alerts?</span></li>
       <li><b>Voids and refunds</b><span>Not in scope. A refund would add a stock movement and a negative sale, never edit a sale.</span></li>
     </ul>
