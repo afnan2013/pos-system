@@ -1169,8 +1169,9 @@ Settings are read once at startup by explicit loaders in `platform/config`, each
 | `loadHttp` | `HTTP_PORT` | default 3000 | server |
 | `loadHttp` | `PUBLIC_ORIGIN` | required; the address people open; `https` turns on the `__Host-` cookie and `Secure` | server |
 | `loadHttp` | `SHUTDOWN_TIMEOUT` | a duration like `10s`; default `10s` **(proposed setting)** | server |
-| `loadTokenSettings` | `TOKEN_SIGNING_KEY` | required; an ECDSA P-256 private key in PEM; held as a `Secret` | server |
+| `loadTokenSettings` | `TOKEN_SIGNING_KEY` | required; an ECDSA P-256 private key as PKCS#8 PEM, base64-encoded on one line; decoded to the PEM on load; held as a `Secret` | server |
 | `loadTokenSettings` | `ACCESS_TOKEN_TTL` | a duration up to `24h`; default `1h` | server |
+| seed CLI | `SEED_ADMIN_PASSWORD` | required by the seed only; the first HQ admin's password; held as a `Secret` **(proposed shape)** | seed |
 
 - The migrate CLI calls `loadDatabase` for `MIGRATOR_DATABASE_URL` instead of `DATABASE_URL`, because migrations run as the `migrator` role **(proposed shape)**.
 - `loadSettings` runs every loader the program needs, collects **every** bad setting, and throws one error listing them all, so a broken `.env` is fixed in one pass; the process exits before it listens.
@@ -1277,7 +1278,7 @@ Anything outside our process sits behind a small interface that the using servic
 
 | Interface | Real adapter | Test double | Used by |
 |---|---|---|---|
-| `TokenSigner` | `jose`, ES256 with the PEM key from `TOKEN_SIGNING_KEY` | a signer with a throwaway key | auth |
+| `TokenSigner` | `jose`, ES256 with the key from `TOKEN_SIGNING_KEY`, base64-decoded and imported with `importPKCS8` | a signer with a throwaway key | auth |
 | `PasswordHasher` | argon2id | argon2id with the cheapest parameters | auth, users |
 | `Clock` | `systemClock` | fixed clock | auth, reports |
 | `IdGenerator` | `uuidV7Ids` | sequential IDs | every service that creates rows |
