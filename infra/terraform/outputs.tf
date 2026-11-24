@@ -27,3 +27,9 @@ output "ssm_session_command" {
   description = "Shell command that opens an SSM session on the app server; keep it in your notes."
   value       = "aws ssm start-session --target ${aws_instance.app.id} --region ${data.aws_region.current.region}"
 }
+
+output "seed_admin_password" {
+  description = "Password of the first HQ admin created by the seed; read it with terraform output -raw seed_admin_password."
+  value       = random_password.seed_admin.result
+  sensitive   = true
+}

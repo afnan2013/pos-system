@@ -296,7 +296,7 @@ The secret values also sit in Terraform state, which is why the state bucket mus
 
 ### `outputs.tf`
 
-Six outputs:
+Seven outputs:
 
 | Output | Copy it to |
 |---|---|
@@ -306,6 +306,7 @@ Six outputs:
 | `github_deploy_role_arn` | GitHub variable `AWS_DEPLOY_ROLE_ARN` |
 | `aws_region` | GitHub variable `AWS_REGION` |
 | `ssm_session_command` | your notes: `aws ssm start-session --target <instance id> --region <region>` |
+| `seed_admin_password` | nowhere: marked sensitive, so plan and apply hide it; read it with `terraform output -raw seed_admin_password` to sign in as the first HQ admin the seed creates |
 
 ## 5. Containers
 
