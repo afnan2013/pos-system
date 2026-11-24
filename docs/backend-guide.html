@@ -1,0 +1,755 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>POS Backend Guide</title>
+<meta name="description" content="A visual guide to how the POS System API is built: modules, the request flow, pgtyped, data shapes, errors, transactions and the sale flow.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Atkinson+Hyperlegible:wght@400;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: a field guide. Sticky chapter rail on the left (a top scroller on phones), one reading column, one colour per layer used the same way in every chapter. */
+:root {
+  --bg: #F2F4F7;
+  --paper: #FFFFFF;
+  --ink: #17202C;
+  --muted: #586374;
+  --rule: #D7DCE4;
+  --accent: #1D5C8C;
+  --accent-soft: #E1ECF5;
+  --mark: #B5741A;
+  --mark-soft: #F6EBDA;
+  --code-bg: #F6F7FA;
+  --good: #2E7D4F;
+  --good-soft: #E2F2E8;
+  --bad: #B23A3A;
+  --bad-soft: #F7E3E3;
+  --l-route: #0F766E;      --l-route-soft: #DDF2EF;
+  --l-controller: #2F6FB3; --l-controller-soft: #E3EEF9;
+  --l-service: #B5741A;    --l-service-soft: #F7ECDC;
+  --l-repo: #2E7D4F;       --l-repo-soft: #E2F2E8;
+  --l-gen: #6B4FA8;        --l-gen-soft: #ECE6F6;
+  --l-db: #4A5568;         --l-db-soft: #E8EBF0;
+  --font-display: "Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
+  --font-body: "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #10151C; --paper: #171E28; --ink: #E4E9F0; --muted: #9AA6B6; --rule: #2A3442;
+    --accent: #6FAEE0; --accent-soft: #1A3045; --mark: #E3A44B; --mark-soft: #3A2C17;
+    --code-bg: #121922; --good: #6CC793; --good-soft: #17342A; --bad: #E58080; --bad-soft: #3A1E1E;
+    --l-route: #5FCFC2;      --l-route-soft: #133431;
+    --l-controller: #7FB2EA; --l-controller-soft: #1B2F45;
+    --l-service: #E3A44B;    --l-service-soft: #3A2C17;
+    --l-repo: #6CC793;       --l-repo-soft: #17342A;
+    --l-gen: #B39AE6;        --l-gen-soft: #2C2440;
+    --l-db: #A9B4C4;         --l-db-soft: #262E3A;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #10151C; --paper: #171E28; --ink: #E4E9F0; --muted: #9AA6B6; --rule: #2A3442;
+  --accent: #6FAEE0; --accent-soft: #1A3045; --mark: #E3A44B; --mark-soft: #3A2C17;
+  --code-bg: #121922; --good: #6CC793; --good-soft: #17342A; --bad: #E58080; --bad-soft: #3A1E1E;
+  --l-route: #5FCFC2;      --l-route-soft: #133431;
+  --l-controller: #7FB2EA; --l-controller-soft: #1B2F45;
+  --l-service: #E3A44B;    --l-service-soft: #3A2C17;
+  --l-repo: #6CC793;       --l-repo-soft: #17342A;
+  --l-gen: #B39AE6;        --l-gen-soft: #2C2440;
+  --l-db: #A9B4C4;         --l-db-soft: #262E3A;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 16.5px; line-height: 1.62; }
+.shell {
+  max-width: 1180px; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 32px 80px;
+  display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 40px;
+}
+@media (max-width: 880px) { .shell { grid-template-columns: minmax(0, 1fr); gap: 16px; padding-block: 0 64px; } }
+
+.rail { position: sticky; top: 24px; align-self: start; display: flex; flex-direction: column; gap: 4px; }
+.rail .brand { font-family: var(--font-display); font-weight: 700; font-size: 1.05rem; margin-bottom: 12px; color: var(--accent); }
+.rail a { color: var(--muted); text-decoration: none; padding: 6px 10px; border-radius: 6px; font-size: 0.92rem; display: flex; gap: 8px; align-items: baseline; }
+.rail a span.n { font-family: var(--font-mono); font-size: 0.78rem; min-width: 1.4em; }
+.rail a:hover { background: var(--accent-soft); color: var(--ink); }
+a:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (max-width: 880px) {
+  .rail { position: sticky; top: 0; z-index: 5; flex-direction: row; overflow-x: auto; background: var(--bg); padding-block: max(8px, env(safe-area-inset-top, 0px)) 8px; border-bottom: 1px solid var(--rule); gap: 2px; }
+  .rail .brand { display: none; }
+  .rail a { white-space: nowrap; flex: none; }
+}
+
+main { min-width: 0; display: flex; flex-direction: column; gap: 72px; }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; margin: 0; line-height: 1.15; }
+h1 { font-size: clamp(2.1rem, 5vw, 3.1rem); font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: clamp(1.55rem, 3.2vw, 2rem); font-weight: 700; }
+h3 { font-size: 1.12rem; font-weight: 700; }
+p { margin: 0; max-width: 68ch; }
+ul, ol { margin: 0; padding-left: 1.3em; display: flex; flex-direction: column; gap: 6px; max-width: 70ch; }
+.eyebrow { font-family: var(--font-mono); font-size: 0.76rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--mark); }
+.lede { font-size: 1.12rem; color: var(--muted); max-width: 64ch; }
+section.ch { display: flex; flex-direction: column; gap: 18px; scroll-margin-top: 80px; }
+.prose { display: flex; flex-direction: column; gap: 12px; }
+code { font-family: var(--font-mono); font-size: 0.86em; background: var(--code-bg); border: 1px solid var(--rule); padding: 0 5px; border-radius: 4px; overflow-wrap: anywhere; }
+pre { margin: 0; background: var(--code-bg); border: 1px solid var(--rule); border-radius: 8px; padding: 14px 16px; overflow-x: auto; font-family: var(--font-mono); font-size: 0.8rem; line-height: 1.55; max-width: 100%; }
+pre code { background: none; border: 0; padding: 0; font-size: inherit; overflow-wrap: normal; }
+.c { color: var(--muted); }
+.k { color: var(--accent); font-weight: 600; }
+.s { color: var(--good); }
+.x { color: var(--bad); }
+
+.card { background: var(--paper); border: 1px solid var(--rule); border-radius: 12px; padding: 18px 20px; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.card h3 { font-size: 1rem; }
+.grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+@media (max-width: 760px) { .grid2, .grid3 { grid-template-columns: minmax(0, 1fr); } }
+
+.callout { border-left: 3px solid var(--mark); background: var(--mark-soft); padding: 12px 16px; border-radius: 0 8px 8px 0; max-width: 72ch; }
+.status { font-family: var(--font-mono); font-size: 0.8rem; color: var(--muted); border: 1px dashed var(--rule); border-radius: 8px; padding: 8px 12px; max-width: 72ch; }
+
+figure { margin: 0; background: var(--paper); border: 1px solid var(--rule); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+figure svg { width: 100%; height: auto; display: block; max-width: 640px; margin: 0 auto; }
+figcaption { font-size: 0.9rem; color: var(--muted); max-width: 68ch; }
+@media (max-width: 480px) { figure { padding: 10px 6px; } }
+
+.chip { display: inline-block; font-family: var(--font-mono); font-size: 0.74rem; padding: 1px 8px; border-radius: 999px; white-space: nowrap; }
+.chip.route { background: var(--l-route-soft); color: var(--l-route); }
+.chip.controller { background: var(--l-controller-soft); color: var(--l-controller); }
+.chip.service { background: var(--l-service-soft); color: var(--l-service); }
+.chip.repo { background: var(--l-repo-soft); color: var(--l-repo); }
+.chip.gen { background: var(--l-gen-soft); color: var(--l-gen); }
+.chip.db { background: var(--l-db-soft); color: var(--l-db); }
+.chip.edge { background: var(--accent-soft); color: var(--accent); }
+.chip.bad { background: var(--bad-soft); color: var(--bad); }
+.map { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.map .sep { color: var(--muted); font-size: 0.8rem; }
+
+/* SVG diagram classes */
+.d-t { fill: var(--ink); font-family: var(--font-body); font-size: 13.5px; font-weight: 700; }
+.d-s { fill: var(--muted); font-family: var(--font-mono); font-size: 10.5px; }
+.d-m { fill: var(--muted); font-family: var(--font-body); font-size: 11.5px; }
+.d-line { stroke: var(--muted); stroke-width: 1.4; fill: none; }
+.d-dash { stroke: var(--bad); stroke-width: 1.3; fill: none; stroke-dasharray: 4 3; }
+.d-life { stroke: var(--rule); stroke-width: 1.5; stroke-dasharray: 3 4; fill: none; }
+.d-ah { fill: var(--muted); }
+.d-ahb { fill: var(--bad); }
+.d-box { fill: var(--paper); stroke: var(--rule); stroke-width: 1.2; }
+.d-edge { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.2; }
+.d-route { fill: var(--l-route-soft); stroke: var(--l-route); stroke-width: 1.2; }
+.d-controller { fill: var(--l-controller-soft); stroke: var(--l-controller); stroke-width: 1.2; }
+.d-service { fill: var(--l-service-soft); stroke: var(--l-service); stroke-width: 1.2; }
+.d-repo { fill: var(--l-repo-soft); stroke: var(--l-repo); stroke-width: 1.2; }
+.d-gen { fill: var(--l-gen-soft); stroke: var(--l-gen); stroke-width: 1.2; stroke-dasharray: 5 3; }
+.d-db { fill: var(--l-db-soft); stroke: var(--l-db); stroke-width: 1.2; }
+.d-err { fill: var(--bad-soft); stroke: var(--bad); stroke-width: 1.2; }
+.d-ok { fill: var(--good-soft); stroke: var(--good); stroke-width: 1.2; }
+.d-wait { fill: var(--mark-soft); stroke: var(--mark); stroke-width: 1.2; }
+.d-tag { font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: 0.06em; }
+.d-tag.route { fill: var(--l-route); } .d-tag.controller { fill: var(--l-controller); } .d-tag.service { fill: var(--l-service); }
+.d-tag.repo { fill: var(--l-repo); } .d-tag.gen { fill: var(--l-gen); } .d-tag.db { fill: var(--l-db); } .d-tag.edge { fill: var(--accent); } .d-tag.bad { fill: var(--bad); } .d-tag.wait { fill: var(--mark); }
+
+/* tables */
+.tbl-wrap { overflow-x: auto; border: 1px solid var(--rule); border-radius: 10px; background: var(--paper); }
+table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font-family: var(--font-mono); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; }
+tr:last-child td { border-bottom: 0; }
+td.num { font-variant-numeric: tabular-nums; font-weight: 700; }
+
+/* steps */
+.steps { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 8px; max-width: none; }
+.steps li { display: grid; grid-template-columns: 2.2em minmax(0, 1fr); gap: 10px; background: var(--paper); border: 1px solid var(--rule); border-radius: 10px; padding: 10px 14px; }
+.steps li .no { font-family: var(--font-mono); color: var(--mark); font-weight: 600; padding-top: 1px; }
+.steps li.tx { border-left: 3px solid var(--l-service); }
+.steps li b { display: block; }
+
+details.more { background: var(--paper); border: 1px solid var(--rule); border-radius: 10px; }
+details.more summary { cursor: pointer; padding: 12px 16px; font-weight: 700; list-style: none; display: flex; gap: 10px; align-items: baseline; }
+details.more summary::-webkit-details-marker { display: none; }
+details.more summary::before { content: "+"; font-family: var(--font-mono); color: var(--mark); }
+details.more[open] summary::before { content: "-"; }
+details.more[open] summary { border-bottom: 1px solid var(--rule); }
+details.more .body { padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+
+/* folder tree */
+.tree { font-family: var(--font-mono); font-size: 0.8rem; line-height: 1.7; background: var(--paper); border: 1px solid var(--rule); border-radius: 12px; padding: 14px 16px; overflow-x: auto; white-space: pre; margin: 0; }
+.tree .d { color: var(--muted); }
+.tree .h { color: var(--mark); font-weight: 600; }
+.tree .g { color: var(--l-gen); }
+
+/* rules */
+.rules { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 760px) { .rules { grid-template-columns: minmax(0, 1fr); } }
+.rule { background: var(--paper); border: 1px solid var(--rule); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; }
+.rule b { font-size: 0.98rem; }
+.rule span { font-size: 0.9rem; color: var(--muted); }
+
+.hero { display: flex; flex-direction: column; gap: 16px; padding-top: 8px; }
+footer { color: var(--muted); font-size: 0.9rem; border-top: 1px solid var(--rule); padding-top: 18px; }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="d-ah" d="M0,0 L10,5 L0,10 z"/></marker>
+    <marker id="ahb" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="d-ahb" d="M0,0 L10,5 L0,10 z"/></marker>
+  </defs>
+</svg>
+
+<div class="shell">
+  <nav class="rail" aria-label="Chapters">
+    <div class="brand">POS System · backend</div>
+    <a href="#module"><span class="n">1</span>The shape of a module</a>
+    <a href="#flow"><span class="n">2</span>A request, end to end</a>
+    <a href="#pgtyped"><span class="n">3</span>pgtyped</a>
+    <a href="#shapes"><span class="n">4</span>Four shapes of data</a>
+    <a href="#errors"><span class="n">5</span>Errors</a>
+    <a href="#tx"><span class="n">6</span>Transactions and sales</a>
+    <a href="#layout"><span class="n">7</span>Folders and wiring</a>
+    <a href="#rules"><span class="n">8</span>The rules</a>
+  </nav>
+
+  <main>
+    <header class="hero">
+      <div class="eyebrow">Field guide · api/ · Node.js 26 + Express 5 + PostgreSQL 18</div>
+      <h1>How the POS API is built</h1>
+      <p class="lede">One company, many food-and-beverage outlets. HQ (headquarters) runs the master menu and the reports; each outlet sells from its own menu and its own stock. This guide shows, one picture at a time, how the API behind it is put together, so you can find your way around the code on your first day.</p>
+      <div class="map" aria-label="The layers used throughout this guide">
+        <span class="chip route">Route</span><span class="sep">→</span>
+        <span class="chip controller">Controller</span><span class="sep">→</span>
+        <span class="chip service">Service</span><span class="sep">→</span>
+        <span class="chip repo">Repository</span><span class="sep">→</span>
+        <span class="chip gen">pgtyped (generated)</span><span class="sep">→</span>
+        <span class="chip db">Postgres</span>
+      </div>
+      <p class="status">Status: target design, 2026-11-25; each feature's spec confirms or changes its part. Nothing is built yet. The rulebook behind this page is <code>docs/backend-design-patterns.md</code>; the short version is <code>.claude/rules/backend.md</code>.</p>
+    </header>
+
+    <!-- 1 -->
+    <section class="ch" id="module">
+      <div class="eyebrow">Chapter 1</div>
+      <h2>The shape of a module</h2>
+      <div class="prose">
+        <p>The API is split into modules, one per business area: <code>auth</code>, <code>roles</code>, <code>users</code>, <code>outlets</code>, <code>menu</code>, <code>inventory</code>, <code>sales</code> and <code>reports</code>. Every module has the same layers, and every request passes through them in the same order.</p>
+        <p>Each layer has one job and only knows the layer below it. That one rule is what keeps change small: a renamed column stops at the repository, a new JSON field stops at the controller, and the business rules in the middle do not move.</p>
+      </div>
+      <figure>
+        <svg viewBox="0 0 420 396" role="img" aria-labelledby="f1t">
+          <title id="f1t">The layers of the sales module, top to bottom: route, controller, service, repository, generated pgtyped queries, Postgres.</title>
+          <rect class="d-route" x="10" y="6" width="400" height="48" rx="8"/>
+          <text class="d-tag route" x="24" y="24">ROUTE</text>
+          <text class="d-t" x="24" y="44">sale.routes.ts</text>
+          <text class="d-m" x="396" y="44" text-anchor="end">path, middleware, one controller method</text>
+          <path class="d-line" d="M210 54 V68" marker-end="url(#ah)"/>
+
+          <rect class="d-controller" x="10" y="70" width="400" height="48" rx="8"/>
+          <text class="d-tag controller" x="24" y="88">CONTROLLER</text>
+          <text class="d-t" x="24" y="108">sale.controller.ts</text>
+          <text class="d-m" x="396" y="108" text-anchor="end">validate, call one use case, respond</text>
+          <path class="d-line" d="M210 118 V132" marker-end="url(#ah)"/>
+
+          <rect class="d-service" x="10" y="134" width="400" height="48" rx="8"/>
+          <text class="d-tag service" x="24" y="152">SERVICE</text>
+          <text class="d-t" x="24" y="172">sale.service.ts</text>
+          <text class="d-m" x="396" y="172" text-anchor="end">rules, outlet scope, the transaction</text>
+          <path class="d-line" d="M210 182 V196" marker-end="url(#ah)"/>
+
+          <rect class="d-repo" x="10" y="198" width="400" height="48" rx="8"/>
+          <text class="d-tag repo" x="24" y="216">REPOSITORY</text>
+          <text class="d-t" x="24" y="236">sale.repository.ts</text>
+          <text class="d-m" x="396" y="236" text-anchor="end">run queries, row to model, map errors</text>
+          <path class="d-line" d="M210 246 V260" marker-end="url(#ah)"/>
+
+          <rect class="d-gen" x="10" y="262" width="400" height="48" rx="8"/>
+          <text class="d-tag gen" x="24" y="280">PGTYPED · GENERATED</text>
+          <text class="d-t" x="24" y="300">sale.queries.ts</text>
+          <text class="d-m" x="396" y="300" text-anchor="end">one typed function per SQL statement</text>
+          <path class="d-line" d="M210 310 V324" marker-end="url(#ah)"/>
+
+          <rect class="d-db" x="10" y="326" width="400" height="48" rx="8"/>
+          <text class="d-tag db" x="24" y="344">DATABASE</text>
+          <text class="d-t" x="24" y="364">PostgreSQL 18 · schema pos</text>
+          <text class="d-m" x="396" y="364" text-anchor="end">the last line of defence</text>
+          <text class="d-s" x="210" y="392" text-anchor="middle">dependencies point down only</text>
+        </svg>
+        <figcaption>The sales module. Every other module has the same files with its own name: <code>menu-item.routes.ts</code>, <code>menu-item.controller.ts</code> and so on.</figcaption>
+      </figure>
+      <div class="grid3">
+        <div class="card"><span class="chip controller">Controller</span><h3>Translates HTTP</h3><p>Parses the body, query and path with a zod schema, calls exactly one service method, maps the result to a response, and sends it.</p><p class="c">Never runs SQL, decides a rule, writes an error body or logs.</p></div>
+        <div class="card"><span class="chip service">Service</span><h3>Holds the rules</h3><p>Checks the user may act on this outlet, enforces the business rules, and decides which database changes happen together, in one transaction.</p><p class="c">Never sees Express, status codes, JSON or database row types.</p></div>
+        <div class="card"><span class="chip repo">Repository</span><h3>Talks to Postgres</h3><p>Runs the generated query functions, turns each row into a model, and turns database errors into the app's own errors.</p><p class="c">Never decides a rule, opens a transaction or knows HTTP.</p></div>
+      </div>
+      <p class="callout"><b>The rule to remember:</b> arrows only point down. A module reaches another module only through its service, never its repository. Shared plumbing (errors, logging, config, database, auth) lives in <code>src/platform</code>, which never imports a module.</p>
+    </section>
+
+    <!-- 2 -->
+    <section class="ch" id="flow">
+      <div class="eyebrow">Chapter 2</div>
+      <h2>A request, end to end</h2>
+      <div class="prose">
+        <p>A cashier taps <b>Charge</b>. The browser sends <code>POST /api/v1/outlets/:outletId/sales</code> to its own origin, so there is no CORS (cross-origin resource sharing) to set up. Caddy ends HTTPS and hands the request to the one app container, where it passes a short, fixed chain of middleware.</p>
+      </div>
+      <figure>
+        <svg viewBox="0 0 420 570" role="img" aria-labelledby="f2t">
+          <title id="f2t">The request chain: browser, Caddy, requestId, securityHeaders, requestLog, the JSON parser, the router, authenticate, requirePermission, the controller and the service. Any thrown error leaves the chain for errorHandler.</title>
+          <rect class="d-box" x="10" y="6" width="236" height="38" rx="8"/>
+          <text class="d-t" x="24" y="30">Browser (sell screen)</text>
+          <path class="d-line" d="M128 44 V54" marker-end="url(#ah)"/>
+          <rect class="d-edge" x="10" y="56" width="236" height="38" rx="8"/>
+          <text class="d-t" x="24" y="80">Caddy</text><text class="d-s" x="232" y="80" text-anchor="end">HTTPS, HSTS, gzip</text>
+          <path class="d-line" d="M128 94 V104" marker-end="url(#ah)"/>
+
+          <rect class="d-box" x="10" y="106" width="236" height="38" rx="8"/>
+          <text class="d-t" x="24" y="130">requestId</text><text class="d-s" x="232" y="130" text-anchor="end">X-Request-Id</text>
+          <path class="d-line" d="M128 144 V154" marker-end="url(#ah)"/>
+          <rect class="d-box" x="10" y="156" width="236" height="38" rx="8"/>
+          <text class="d-t" x="24" y="180">securityHeaders</text><text class="d-s" x="232" y="180" text-anchor="end">nosniff, CSP</text>
+          <path class="d-line" d="M128 194 V204" marker-end="url(#ah)"/>
+          <rect class="d-box" x="10" y="206" width="236" height="38" rx="8"/>
+          <text class="d-t" x="24" y="230">requestLog</text><text class="d-s" x="232" y="230" text-anchor="end">one line</text>
+          <path class="d-line" d="M128 244 V254" marker-end="url(#ah)"/>
+          <rect class="d-box" x="10" y="256" width="236" height="38" rx="8"/>
+          <text class="d-t" x="24" y="280">express.json</text><text class="d-s" x="232" y="280" text-anchor="end">1 MB max</text>
+          <path class="d-line" d="M128 294 V304" marker-end="url(#ah)"/>
+          <rect class="d-route" x="10" y="306" width="236" height="38" rx="8"/>
+          <text class="d-t" x="24" y="330">router /api/v1</text><text class="d-s" x="232" y="330" text-anchor="end">match path</text>
+          <path class="d-line" d="M128 344 V354" marker-end="url(#ah)"/>
+          <rect class="d-route" x="10" y="356" width="236" height="38" rx="8"/>
+          <text class="d-t" x="24" y="380">authenticate</text><text class="d-s" x="232" y="380" text-anchor="end">who? 401</text>
+          <path class="d-line" d="M128 394 V404" marker-end="url(#ah)"/>
+          <rect class="d-route" x="10" y="406" width="236" height="38" rx="8"/>
+          <text class="d-t" x="24" y="430">requirePermission</text><text class="d-s" x="232" y="430" text-anchor="end">what? 403</text>
+          <path class="d-line" d="M128 444 V454" marker-end="url(#ah)"/>
+          <rect class="d-controller" x="10" y="456" width="236" height="38" rx="8"/>
+          <text class="d-t" x="24" y="480">SaleController</text><text class="d-s" x="232" y="480" text-anchor="end">validate</text>
+          <path class="d-line" d="M128 494 V504" marker-end="url(#ah)"/>
+          <rect class="d-service" x="10" y="506" width="236" height="38" rx="8"/>
+          <text class="d-t" x="24" y="530">SaleService</text><text class="d-s" x="232" y="530" text-anchor="end">where? 403</text>
+
+          <path class="d-dash" d="M246 275 H272"/>
+          <path class="d-dash" d="M246 325 H272"/>
+          <path class="d-dash" d="M246 375 H272"/>
+          <path class="d-dash" d="M246 425 H272"/>
+          <path class="d-dash" d="M246 475 H272"/>
+          <path class="d-dash" d="M246 525 H272"/>
+          <path class="d-dash" d="M272 275 V525"/>
+          <path class="d-dash" d="M272 400 H292" marker-end="url(#ahb)"/>
+          <rect class="d-err" x="294" y="368" width="116" height="64" rx="8"/>
+          <text class="d-tag bad" x="352" y="388" text-anchor="middle">ANY THROW</text>
+          <text class="d-t" x="352" y="408" text-anchor="middle">errorHandler</text>
+          <text class="d-s" x="352" y="424" text-anchor="middle">problem+json</text>
+          <text class="d-m" x="352" y="454" text-anchor="middle">the only writer</text>
+          <text class="d-m" x="352" y="470" text-anchor="middle">of error bodies</text>
+          <text class="d-m" x="300" y="562" text-anchor="start">success: 201 + sale</text>
+        </svg>
+        <figcaption>Order is fixed: requestId, securityHeaders, requestLog, the JSON parser, then routes; <code>authenticate</code> and <code>requirePermission</code> are named on each route, not applied globally; <code>errorHandler</code> is registered last.</figcaption>
+      </figure>
+      <div class="grid3">
+        <div class="card"><span class="chip route">authenticate</span><h3>Who are you?</h3><p>Reads the ES256 token from the <code>Authorization: Bearer</code> header or the HttpOnly cookie (<code>__Host-pos_at</code>), checks the signature locally, and puts a <code>Principal</code> (user ID, outlet ID or none for HQ, permission keys) in the request context.</p><p class="c">No token, bad token or expired token: 401.</p></div>
+        <div class="card"><span class="chip route">requirePermission</span><h3>May you do this?</h3><p><code>requirePermission(Permission.SalesCreate)</code> on the route. The token must hold at least one of the listed keys.</p><p class="c">Missing key: 403.</p></div>
+        <div class="card"><span class="chip service">assertOutletAccess</span><h3>Here?</h3><p>The service's first line. An outlet user may act only on their own outlet; an HQ user may act on any.</p><p class="c">Another outlet's ID: 403, whether it exists or not.</p></div>
+      </div>
+      <details class="more">
+        <summary>What the middleware promise you</summary>
+        <div class="body">
+          <ul>
+            <li><b>requestId</b> keeps an incoming <code>X-Request-Id</code> only if it is 1 to 64 characters of <code>[A-Za-z0-9._-]</code>, otherwise makes a UUIDv7, echoes it in the response, and opens the request context (AsyncLocalStorage) with a logger carrying it.</li>
+            <li><b>securityHeaders</b> (proposed) is a small middleware in <code>src/platform/http</code> with no new dependency; it sets <code>X-Content-Type-Options: nosniff</code>, <code>Referrer-Policy: strict-origin-when-cross-origin</code>, <code>X-Frame-Options: DENY</code> and a strict <code>Content-Security-Policy</code> for the web app. Caddy adds <code>Strict-Transport-Security</code>.</li>
+            <li><b>requestLog</b> writes exactly one line per request: <code>method</code>, <code>route</code> (the pattern, such as <code>/api/v1/outlets/:outletId/sales</code>), <code>status</code>, <code>durationMs</code>, <code>bytes</code>, <code>requestId</code>, plus <code>userId</code> and <code>outletId</code> once signed in.</li>
+            <li><b>express.json</b> refuses bodies over 1 MB (413) and turns a parse error into one fixed message, because the parser's own text can quote the body, and the body may hold a password.</li>
+            <li>Health checks sit outside <code>/api</code>: <code>/healthz</code> (the process is up) and <code>/readyz</code> (the database answers).</li>
+          </ul>
+        </div>
+      </details>
+    </section>
+
+    <!-- 3 -->
+    <section class="ch" id="pgtyped">
+      <div class="eyebrow">Chapter 3</div>
+      <h2>pgtyped: you write SQL, it writes the TypeScript</h2>
+      <div class="prose">
+        <p>SQL written as a string inside TypeScript is invisible to the compiler: a typo in a column name, or a column someone renamed, compiles fine and fails when a customer hits that screen.</p>
+        <p><b>pgtyped</b> fixes that. You write plain SQL in a <code>.sql</code> file next to the repository. pgtyped sends each statement to a real, migrated Postgres, asks it to describe the parameters and the result columns, and writes a typed function for it. Postgres itself does the checking. It is not an ORM: nothing clever happens at runtime, and you can read every generated line.</p>
+      </div>
+      <figure>
+        <svg viewBox="0 0 420 336" role="img" aria-labelledby="f3t">
+          <title id="f3t">The pgtyped loop: migrations build a local Postgres; pgtyped reads each named SQL statement, asks Postgres to describe it, and writes a queries file; the repository imports it; a changed column becomes a compile error.</title>
+          <rect class="d-box" x="10" y="6" width="190" height="52" rx="8"/>
+          <text class="d-t" x="24" y="28">migrations/*.sql</text><text class="d-s" x="24" y="46">the schema, numbered</text>
+          <rect class="d-box" x="240" y="6" width="170" height="52" rx="8"/>
+          <text class="d-t" x="254" y="28">menu-item.sql</text><text class="d-s" x="254" y="46">you write: named SQL</text>
+
+          <path class="d-line" d="M105 58 V100" marker-end="url(#ah)"/>
+          <text class="d-s" x="112" y="84">npm run migrate</text>
+          <path class="d-line" d="M325 58 V100" marker-end="url(#ah)"/>
+
+          <rect class="d-db" x="10" y="102" width="190" height="52" rx="8"/>
+          <text class="d-t" x="24" y="124">local Postgres</text><text class="d-s" x="24" y="142">migrated, real types</text>
+          <rect class="d-gen" x="240" y="102" width="170" height="52" rx="8"/>
+          <text class="d-t" x="254" y="124">pgtyped</text><text class="d-s" x="254" y="142">npm run db:generate</text>
+          <path class="d-line" d="M238 128 H202" marker-end="url(#ah)" marker-start="url(#ah)"/>
+          <text class="d-s" x="220" y="172" text-anchor="middle">"describe this statement"</text>
+
+          <path class="d-line" d="M325 154 V196" marker-end="url(#ah)"/>
+          <rect class="d-gen" x="240" y="198" width="170" height="52" rx="8"/>
+          <text class="d-t" x="254" y="220">menu-item.queries.ts</text><text class="d-s" x="254" y="238">generated, committed</text>
+          <path class="d-line" d="M238 224 H202" marker-end="url(#ah)"/>
+          <rect class="d-repo" x="10" y="198" width="190" height="52" rx="8"/>
+          <text class="d-t" x="24" y="220">menu-item.repository.ts</text><text class="d-s" x="24" y="238">imports and runs it</text>
+
+          <path class="d-line" d="M105 250 V284" marker-end="url(#ah)"/>
+          <rect class="d-ok" x="10" y="286" width="400" height="42" rx="8"/>
+          <text class="d-t" x="24" y="312">tsc: a changed column becomes a compile error</text>
+        </svg>
+        <figcaption>CI (continuous integration) runs the same loop on every pull request and fails if the regenerated files differ from the committed ones.</figcaption>
+      </figure>
+      <div class="grid2">
+        <div class="card">
+          <span class="chip repo">You write</span>
+          <pre><code><span class="c">-- inventory.sql</span>
+<span class="c">/* @name DeductStock */</span>
+<span class="k">UPDATE</span> pos.outlet_inventory
+   <span class="k">SET</span> quantity = quantity - :quantity!,
+       updated_at = now()
+ <span class="k">WHERE</span> outlet_id = :outletId!
+   <span class="k">AND</span> menu_item_id = :menuItemId!
+   <span class="k">AND</span> quantity &gt;= :quantity!
+<span class="k">RETURNING</span> quantity;</code></pre>
+        </div>
+        <div class="card">
+          <span class="chip gen">pgtyped writes</span>
+          <pre><code><span class="c">// inventory.queries.ts (never edited)</span>
+<span class="k">export interface</span> IDeductStockParams {
+  quantity: number;
+  outletId: string;
+  menuItemId: string;
+}
+<span class="k">export interface</span> IDeductStockResult {
+  quantity: number;
+}
+<span class="k">export const</span> deductStock =
+  <span class="k">new</span> PreparedQuery&lt;IDeductStockParams,
+    IDeductStockResult&gt;(<span class="c">/* ... */</span>);</code></pre>
+        </div>
+      </div>
+      <pre><code><span class="c">// inventory.repository.ts: the name matches the statement</span>
+<span class="k">async</span> deductStock(tx: Tx, outletId: string, menuItemId: string, quantity: number): Promise&lt;<span class="k">number</span> | <span class="k">null</span>&gt; {
+  <span class="k">try</span> {
+    <span class="k">const</span> [row] = <span class="k">await</span> deductStock.run({ outletId, menuItemId, quantity }, tx);
+    <span class="k">return</span> row ? row.quantity : <span class="k">null</span>;   <span class="c">// null: not enough stock</span>
+  } <span class="k">catch</span> (err) {
+    <span class="k">throw</span> mapPgError(err);
+  }
+}</code></pre>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>You change</th><th>What happens</th></tr></thead>
+          <tbody>
+            <tr><td>Add a column in a migration</td><td>Nothing breaks. Add it to the statements that should read it, regenerate, and the row type grows.</td></tr>
+            <tr><td>Rename <code>base_price_minor</code></td><td>Regenerating fails on every statement that names the old column; after fixing the SQL, <code>tsc</code> points at every mapper that read <code>row.base_price_minor</code>.</td></tr>
+            <tr><td>Typo in a statement</td><td>Postgres refuses to describe it, so <code>npm run db:generate</code> fails before any code runs.</td></tr>
+            <tr><td>Forget to regenerate</td><td>CI's drift check fails the pull request.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="callout"><b>Two traps pgtyped cannot see:</b> <code>SUM()</code> over a <code>bigint</code> returns <code>numeric</code>, which arrives as a string, so cast it back with <code>::bigint</code>; and <code>bigint</code> money is parsed into a JavaScript <code>number</code> by a parser that refuses anything above <code>Number.MAX_SAFE_INTEGER</code>.</p>
+    </section>
+
+    <!-- 4 -->
+    <section class="ch" id="shapes">
+      <div class="eyebrow">Chapter 4</div>
+      <h2>Four shapes of data, two places they change</h2>
+      <div class="prose">
+        <p>Follow HQ creating the menu item "Iced Latte". On its way in and out, the data takes four shapes, and it changes shape in exactly two places: the <span class="chip repo">repository</span> turns database rows into models, and the <span class="chip controller">controller</span> turns requests into inputs and models into responses. Those two conversions are buffers: a database change stops at the repository, an API change stops at the controller.</p>
+      </div>
+      <figure>
+        <svg viewBox="0 0 420 330" role="img" aria-labelledby="f4t">
+          <title id="f4t">The four shapes: a request DTO becomes an input in the controller; the service works on models; the repository turns rows into models; the controller turns models into response DTOs.</title>
+          <text class="d-tag controller" x="10" y="14">CONTROLLER · IN</text>
+          <rect class="d-box" x="10" y="22" width="118" height="46" rx="8"/>
+          <text class="d-t" x="69" y="43" text-anchor="middle">JSON body</text><text class="d-s" x="69" y="59" text-anchor="middle">untrusted</text>
+          <path class="d-line" d="M128 45 H148" marker-end="url(#ah)"/>
+          <rect class="d-controller" x="150" y="22" width="120" height="46" rx="8"/>
+          <text class="d-t" x="210" y="43" text-anchor="middle">Request DTO</text><text class="d-s" x="210" y="59" text-anchor="middle">zod .strict()</text>
+          <path class="d-line" d="M270 45 H290" marker-end="url(#ah)"/>
+          <rect class="d-controller" x="292" y="22" width="118" height="46" rx="8"/>
+          <text class="d-t" x="351" y="43" text-anchor="middle">Input</text><text class="d-s" x="351" y="59" text-anchor="middle">plain type</text>
+          <path class="d-line" d="M351 68 V96" marker-end="url(#ah)"/>
+
+          <text class="d-tag service" x="10" y="92">SERVICE</text>
+          <rect class="d-service" x="10" y="98" width="400" height="52" rx="8"/>
+          <text class="d-t" x="210" y="120" text-anchor="middle">Model: MenuItem</text>
+          <text class="d-s" x="210" y="138" text-anchor="middle">camelCase · money in minor units · Date · no tags</text>
+
+          <text class="d-tag repo" x="10" y="176">REPOSITORY</text>
+          <rect class="d-gen" x="10" y="182" width="150" height="46" rx="8"/>
+          <text class="d-t" x="85" y="203" text-anchor="middle">Row</text><text class="d-s" x="85" y="219" text-anchor="middle">base_price_minor</text>
+          <path class="d-line" d="M160 205 H260" marker-end="url(#ah)"/>
+          <text class="d-s" x="210" y="198" text-anchor="middle">toMenuItem()</text>
+          <rect class="d-service" x="262" y="182" width="148" height="46" rx="8"/>
+          <text class="d-t" x="336" y="203" text-anchor="middle">Model</text><text class="d-s" x="336" y="219" text-anchor="middle">basePriceMinor</text>
+          <path class="d-line" d="M336 182 V152" marker-end="url(#ah)"/>
+
+          <text class="d-tag controller" x="10" y="254">CONTROLLER · OUT</text>
+          <rect class="d-service" x="10" y="262" width="118" height="46" rx="8"/>
+          <text class="d-t" x="69" y="290" text-anchor="middle">Model</text>
+          <path class="d-line" d="M128 285 H148" marker-end="url(#ah)"/>
+          <rect class="d-controller" x="150" y="262" width="120" height="46" rx="8"/>
+          <text class="d-t" x="210" y="283" text-anchor="middle">Response DTO</text><text class="d-s" x="210" y="299" text-anchor="middle">fields listed</text>
+          <path class="d-line" d="M270 285 H290" marker-end="url(#ah)"/>
+          <rect class="d-box" x="292" y="262" width="118" height="46" rx="8"/>
+          <text class="d-t" x="351" y="283" text-anchor="middle">JSON</text><text class="d-s" x="351" y="299" text-anchor="middle">ISO times</text>
+          <text class="d-s" x="210" y="326" text-anchor="middle">toMenuItemResponse()</text>
+        </svg>
+      </figure>
+      <div class="grid2">
+        <div class="card"><h3>Why the row stays snake_case</h3><p>pgtyped's column-renaming option is off, so a row reads <code>row.base_price_minor</code> and a model reads <code>menuItem.basePriceMinor</code>. A row can never pass for a model or a response by accident.</p></div>
+        <div class="card"><h3>Why mappers list every field</h3><p>The user model holds <code>passwordHash</code>. <code>{ ...user }</code> in a mapper would send it. Writing each field by hand means a new field reaches the API only when someone decides it should.</p></div>
+      </div>
+      <p class="callout"><b>Rules:</b> never return a row or a model as JSON; never reuse a request DTO as a response; money is an integer in minor units everywhere (<code>basePriceMinor: 35000</code>); IDs are UUIDv7 strings; times are UTC, sent as ISO 8601.</p>
+    </section>
+
+    <!-- 5 -->
+    <section class="ch" id="errors">
+      <div class="eyebrow">Chapter 5</div>
+      <h2>Errors: one path, one shape</h2>
+      <div class="prose">
+        <p>Nobody in the chain writes an error response. Every layer just <b>throws</b> an <code>AppError</code> with a <b>kind</b>, Express 5 forwards it (thrown or rejected), and one <span class="chip edge">errorHandler</span> at the end turns every error, from anywhere, into the same RFC 7807 problem document. It also decides what gets logged, so each real failure is logged exactly once.</p>
+      </div>
+      <figure>
+        <svg viewBox="0 0 420 330" role="img" aria-labelledby="f5t">
+          <title id="f5t">Five sources of errors all flow to errorHandler, which writes one problem document and logs only unexpected, unavailable and canceled errors.</title>
+          <rect class="d-controller" x="10" y="6" width="210" height="44" rx="8"/>
+          <text class="d-t" x="22" y="25">validate() in a controller</text><text class="d-s" x="22" y="41">validation · 400</text>
+          <rect class="d-service" x="10" y="60" width="210" height="44" rx="8"/>
+          <text class="d-t" x="22" y="79">ErrInsufficientStock</text><text class="d-s" x="22" y="95">conflict · 409</text>
+          <rect class="d-repo" x="10" y="114" width="210" height="44" rx="8"/>
+          <text class="d-t" x="22" y="133">mapPgError: 23505</text><text class="d-s" x="22" y="149">conflict · 409</text>
+          <rect class="d-box" x="10" y="168" width="210" height="44" rx="8"/>
+          <text class="d-t" x="22" y="187">body over 1 MB</text><text class="d-s" x="22" y="203">too_large · 413</text>
+          <rect class="d-err" x="10" y="222" width="210" height="44" rx="8"/>
+          <text class="d-t" x="22" y="241">TypeError (a bug)</text><text class="d-s" x="22" y="257">unexpected · 500</text>
+
+          <path class="d-line" d="M220 28 C250 28 250 130 278 132"/>
+          <path class="d-line" d="M220 82 C246 82 250 134 278 136"/>
+          <path class="d-line" d="M220 136 H278"/>
+          <path class="d-line" d="M220 190 C246 190 250 140 278 140"/>
+          <path class="d-line" d="M220 244 C250 244 250 144 276 144" marker-end="url(#ah)"/>
+
+          <rect class="d-edge" x="280" y="104" width="130" height="68" rx="8"/>
+          <text class="d-tag edge" x="345" y="124" text-anchor="middle">LAST MIDDLEWARE</text>
+          <text class="d-t" x="345" y="144" text-anchor="middle">errorHandler</text>
+          <text class="d-s" x="345" y="161" text-anchor="middle">kindOf(err)</text>
+
+          <path class="d-line" d="M345 172 V198" marker-end="url(#ah)"/>
+          <rect class="d-box" x="280" y="200" width="130" height="44" rx="8"/>
+          <text class="d-t" x="345" y="219" text-anchor="middle">problem+json</text><text class="d-s" x="345" y="235" text-anchor="middle">no-store</text>
+          <path class="d-line" d="M345 244 V266" marker-end="url(#ah)"/>
+          <rect class="d-wait" x="280" y="268" width="130" height="56" rx="8"/>
+          <text class="d-t" x="345" y="287" text-anchor="middle">log once</text>
+          <text class="d-s" x="345" y="302" text-anchor="middle">500: error</text>
+          <text class="d-s" x="345" y="316" text-anchor="middle">503 warn, 499 info</text>
+        </svg>
+      </figure>
+      <div class="grid2">
+        <div class="card">
+          <h3>What the client receives</h3>
+          <pre><code>HTTP/1.1 409 Conflict
+Content-Type: application/problem+json
+Cache-Control: no-store
+X-Request-Id: 0193b6f3-01bc-7d22-...
+
+{
+  <span class="s">"type"</span>: <span class="s">"/problems/conflict"</span>,
+  <span class="s">"title"</span>: <span class="s">"Not enough stock for Iced Latte"</span>,
+  <span class="s">"status"</span>: 409,
+  <span class="s">"instance"</span>: <span class="s">"/api/v1/outlets/0193.../sales"</span>,
+  <span class="s">"requestId"</span>: <span class="s">"0193b6f3-01bc-7d22-..."</span>
+}</code></pre>
+          <p class="c">A validation error adds <code>"errors": { "items[1].quantity": "must be at least 1" }</code>, keyed by the JSON names the client sent, so the web app can put each message under the right field.</p>
+        </div>
+        <div class="card">
+          <h3>Who does what with an error</h3>
+          <ul>
+            <li><span class="chip repo">repository</span> passes every database error through <code>mapPgError</code>, and turns constraints that mean something (<code>menu_items_sku_key</code>) into area errors (<code>ErrSkuTaken</code>).</li>
+            <li><span class="chip service">service</span> throws area errors declared once in <code>&lt;thing&gt;.ts</code>.</li>
+            <li><span class="chip controller">controller</span> throws from <code>validate()</code> and otherwise lets errors pass.</li>
+            <li><span class="chip edge">errorHandler</span> writes the body and the log. Nothing else does either.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Kind</th><th>Status</th><th>Typical cause</th><th>Logged</th></tr></thead>
+          <tbody>
+            <tr><td><code>validation</code></td><td class="num">400</td><td>zod rejected the input; a CHECK constraint (23514)</td><td>no</td></tr>
+            <tr><td><code>unauthorized</code></td><td class="num">401</td><td>no token, bad token, wrong password</td><td>no</td></tr>
+            <tr><td><code>forbidden</code></td><td class="num">403</td><td>missing permission key; another outlet</td><td>no</td></tr>
+            <tr><td><code>not_found</code></td><td class="num">404</td><td>no such sale at this outlet; unknown path</td><td>no</td></tr>
+            <tr><td><code>conflict</code></td><td class="num">409</td><td>not enough stock; item not on sale; SKU taken (23505); role in use or unassigning a sold item (23001)</td><td>no</td></tr>
+            <tr><td><code>invalid_reference</code></td><td class="num">400</td><td>a foreign key points at nothing (23503)</td><td>no</td></tr>
+            <tr><td><code>too_large</code></td><td class="num">413</td><td>body over 1 MB</td><td>no</td></tr>
+            <tr><td><code>rate_limited</code></td><td class="num">429</td><td>reserved for a future limiter</td><td>no</td></tr>
+            <tr><td><code>unavailable</code></td><td class="num">503</td><td>statement, lock or idle-transaction timeout; too many connections; database down; serialization failure or deadlock (40001, 40P01), safe to retry because the transaction rolled back</td><td>warn</td></tr>
+            <tr><td><code>canceled</code></td><td class="num">499</td><td>the client left before the answer</td><td>info</td></tr>
+            <tr><td><code>unexpected</code></td><td class="num">500</td><td>anything else: always our bug</td><td>error, with stack</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="callout"><b>Outside the chain:</b> an error in an un-awaited promise or a timer never reaches <code>errorHandler</code>. Those land in <code>unhandledRejection</code> or <code>uncaughtException</code>, which log at <code>fatal</code> and exit; Docker restarts the container. Every write is one transaction and every sale has an idempotency key, so a lost in-flight request is safe to retry.</p>
+    </section>
+
+    <!-- 6 -->
+    <section class="ch" id="tx">
+      <div class="eyebrow">Chapter 6</div>
+      <h2>Transactions and the sale flow</h2>
+      <div class="prose">
+        <p>A transaction makes several database changes happen together or not at all. The sale is the clearest case: deducting stock for three items, taking the next receipt number and saving the sale must all succeed, or none of them.</p>
+        <p>The <span class="chip service">service</span> draws that boundary, because only it knows which changes belong together. One helper, <code>withTx</code>, hides <code>BEGIN</code>, <code>COMMIT</code> and <code>ROLLBACK</code>; the rollback is bounded to 5 seconds, so a dead connection can never hang a request.</p>
+      </div>
+      <div class="grid2">
+        <div class="card"><span class="chip service">Use case</span><h3>No <code>tx</code> parameter</h3><p><code>createSale(actor, outletId, input)</code> opens the transaction with <code>withTx(this.db, async (tx) =&gt; ...)</code>. Controllers call only use cases.</p></div>
+        <div class="card"><span class="chip service">Step</span><h3>Takes <code>tx</code> first</h3><p><code>deductForSale(tx, outletId, lines)</code> joins the caller's transaction and never opens one, even when it lives in another module.</p></div>
+      </div>
+      <h3>Creating a sale, step by step</h3>
+      <ol class="steps">
+        <li><span class="no">1</span><div><b>Check access</b>The route required <code>sales.create</code>; the service checks the cashier belongs to this outlet.</div></li>
+        <li><span class="no">2</span><div><b>Normalise the lines</b>Merge duplicate items, reject a quantity below 1, then sort by <code>menu_item_id</code>. The sort fixes the order rows get locked in, so two sales can never deadlock each other.</div></li>
+        <li class="tx"><span class="no">3</span><div><b>Idempotency</b>If this <code>Idempotency-Key</code> already made a sale at this outlet, return that sale unchanged, with the same <code>201</code>. A retried tap never charges twice. Two requests with the same key at the same moment: the second fails on the unique constraint, its transaction rolls back (receipt number included), and it re-reads and returns the first sale.</div></li>
+        <li class="tx"><span class="no">4</span><div><b>Price the lines</b>One query over the outlet's assignments: the outlet's override, else the master price. An item that is not assigned, marked unavailable (<code>is_available = false</code>) or inactive rejects the whole sale with 409 <code>ErrItemNotSellable</code>.</div></li>
+        <li class="tx"><span class="no">5</span><div><b>Deduct stock, one line at a time, in sorted order</b><code>UPDATE ... SET quantity = quantity - q WHERE ... AND quantity &gt;= q RETURNING quantity</code>. No row back means not enough stock: 409, and the rollback restores every earlier line.</div></li>
+        <li class="tx"><span class="no">6</span><div><b>Take the receipt number last</b><code>UPDATE outlet_receipt_counters SET last_number = last_number + 1, updated_at = now() ... RETURNING last_number</code>. The counter row stays locked for the shortest time; a rollback undoes the increment, so numbers never skip.</div></li>
+        <li class="tx"><span class="no">7</span><div><b>Insert the sale, its lines and its stock movements</b>Totals computed in integer minor units. Insert <code>sales</code>, then <code>sale_items</code> (each line freezes the item name and unit price), then one <code>stock_movements</code> row per line (reason <code>sale</code>, negative change, <code>sale_id</code>), after the sale row because of the foreign key.</div></li>
+        <li><span class="no">8</span><div><b>Commit, respond 201</b>The receipt is shown as <code>DHK01-000042</code>: the outlet code and the zero-padded number.</div></li>
+      </ol>
+      <figure>
+        <svg viewBox="0 0 420 360" role="img" aria-labelledby="f6t">
+          <title id="f6t">Two sales at one outlet at the same moment. Sale A locks the Iced Latte stock row first; sale B waits. A takes receipt 41 and commits; B then re-checks the stock, takes receipt 42 and commits.</title>
+          <rect class="d-controller" x="10" y="6" width="110" height="34" rx="8"/><text class="d-t" x="65" y="28" text-anchor="middle">Sale A</text>
+          <rect class="d-db" x="155" y="6" width="110" height="34" rx="8"/><text class="d-t" x="210" y="28" text-anchor="middle">Postgres</text>
+          <rect class="d-controller" x="300" y="6" width="110" height="34" rx="8"/><text class="d-t" x="355" y="28" text-anchor="middle">Sale B</text>
+          <path class="d-life" d="M65 40 V350"/><path class="d-life" d="M210 40 V350"/><path class="d-life" d="M355 40 V350"/>
+
+          <path class="d-line" d="M65 66 H206" marker-end="url(#ah)"/><text class="d-s" x="70" y="60">DeductStock(latte)</text>
+          <text class="d-m" x="216" y="70">row locked by A</text>
+          <path class="d-line" d="M355 96 H214" marker-end="url(#ah)"/><text class="d-s" x="350" y="90" text-anchor="end">DeductStock(latte)</text>
+          <rect class="d-wait" x="347" y="104" width="16" height="140" rx="4"/>
+          <text class="d-tag wait" x="340" y="178" text-anchor="end">WAITS</text>
+
+          <path class="d-line" d="M65 132 H206" marker-end="url(#ah)"/><text class="d-s" x="70" y="126">NextReceiptNumber</text>
+          <path class="d-line" d="M210 148 H69" marker-end="url(#ah)"/><text class="d-s" x="200" y="160" text-anchor="end">41</text>
+          <path class="d-line" d="M65 186 H206" marker-end="url(#ah)"/><text class="d-s" x="70" y="180">INSERT sale, lines</text>
+          <path class="d-line" d="M65 220 H206" marker-end="url(#ah)"/><text class="d-s" x="70" y="214">COMMIT</text>
+          <rect class="d-ok" x="70" y="226" width="130" height="22" rx="5"/><text class="d-s" x="135" y="241" text-anchor="middle">locks released</text>
+
+          <path class="d-line" d="M214 262 H351" marker-end="url(#ah)"/><text class="d-s" x="218" y="256">B resumes, re-checks</text>
+          <path class="d-line" d="M355 290 H214" marker-end="url(#ah)"/><text class="d-s" x="350" y="284" text-anchor="end">NextReceiptNumber</text>
+          <path class="d-line" d="M210 306 H351" marker-end="url(#ah)"/><text class="d-s" x="220" y="318">42</text>
+          <path class="d-line" d="M355 336 H214" marker-end="url(#ah)"/><text class="d-s" x="350" y="330" text-anchor="end">COMMIT</text>
+        </svg>
+        <figcaption>Under READ COMMITTED, B's waiting update re-reads the row after A commits, so its <code>quantity &gt;= q</code> check sees A's deduction. If the last latte is gone, B gets 409 and its transaction rolls back cleanly.</figcaption>
+      </figure>
+      <div class="grid2">
+        <div class="card">
+          <span class="chip bad">Never</span>
+          <ul>
+            <li><code>SELECT MAX(receipt_number) + 1</code>: two sales read the same maximum.</li>
+            <li>A Postgres sequence: not per outlet, and gaps on rollback.</li>
+            <li><code>SELECT quantity</code>, then <code>UPDATE</code>: another sale slips in between.</li>
+            <li>Raising the isolation level as the fix.</li>
+            <li>A network call, password hash or token signing inside the transaction.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <span class="chip service">Always</span>
+          <ul>
+            <li>Check and write in one conditional statement, with <code>RETURNING</code>.</li>
+            <li>Lock rows in a stable order (sorted by ID).</li>
+            <li>Keep transactions short; do slow work before or after.</li>
+            <li>One statement at a time on a transaction: no <code>Promise.all</code> on the same <code>tx</code>.</li>
+            <li>Test it with real concurrency: 50 sales at once must get receipts 1 to 50.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- 7 -->
+    <section class="ch" id="layout">
+      <div class="eyebrow">Chapter 7</div>
+      <h2>Folders and wiring</h2>
+      <div class="prose">
+        <p>Each module is one folder holding its routes, controller, DTOs, service, repository and SQL. Shared plumbing is written once in <code>src/platform</code>. Four small files at the top connect everything: <code>main.ts</code> reads settings and starts the server, <code>services.ts</code> builds every service once, <code>routes.ts</code> mounts one line per module, and <code>app.ts</code> puts the middleware in order.</p>
+      </div>
+<pre class="tree" aria-label="The api folder"><span class="d">api/</span>
+  <span class="d">migrations/</span>             plain numbered SQL, never edited once applied
+  <span class="d">src/</span>
+    <span class="h">main.ts</span>               loadSettings, logger, pool, buildApp, serveUntilStopped
+    <span class="h">app.ts</span>                the middleware chain, in order
+    <span class="h">services.ts</span>           every repository and service, built once
+    <span class="h">routes.ts</span>             mountRoutes: one line per module
+    <span class="d">platform/</span>
+      config/             loaders, Secret
+      logger/             pino, request context, logger()
+      errors/             AppError, kinds, kindOf
+      http/               requestId, securityHeaders, requestLog, errorHandler, validate, respond
+      db/                 createPool, withTx, mapPgError
+      auth/               token signer, authenticate, requirePermission
+      health/             /healthz, /readyz
+    <span class="d">modules/sales/</span>
+      sale.ts             model, area errors
+      sale.dto.ts         zod schemas, responses, mappers
+      sale.routes.ts      paths and middleware
+      sale.controller.ts
+      sale.service.ts     createSale, listSales, getSale
+      sale.repository.ts
+      sale.sql            NextReceiptNumber, InsertSale, ...
+      <span class="g">sale.queries.ts     generated by pgtyped</span>
+      dependencies.ts     MenuService, InventoryService
+      sale.service.test.ts
+    <span class="d">modules/</span>              auth, roles, users, outlets, menu, inventory, reports
+    <span class="d">cli/</span>
+      migrate.ts          migrations, then the permission sync
+      seed.ts             demo outlets, menu, stock and users</pre>
+      <div class="grid3">
+        <div class="card"><h3>Config</h3><p>Read once at startup by four loaders. Every bad setting is reported at once, and the process stops before it listens. Secrets are wrapped in <code>Secret</code>, which prints <code>xxxxx</code> in logs and JSON.</p></div>
+        <div class="card"><h3>Request context</h3><p>AsyncLocalStorage carries the request ID, the logger and the signed-in user through every <code>await</code>, so <code>logger()</code> anywhere tags its line with them.</p></div>
+        <div class="card"><h3>Permissions</h3><p>Keys like <code>sales.create</code> live in <code>modules/roles/permission.ts</code>. <code>npm run migrate</code> copies them into the database, and <code>HQ Admin</code> always holds every HQ key.</p></div>
+      </div>
+    </section>
+
+    <!-- 8 -->
+    <section class="ch" id="rules">
+      <div class="eyebrow">Chapter 8</div>
+      <h2>The rules</h2>
+      <div class="prose">
+        <p>These are the decisions that are expensive to change later, made once now. Reviewers check every change against them; the full list with reasons is the review checklist at the end of <code>docs/backend-design-patterns.md</code>.</p>
+      </div>
+      <div class="rules">
+        <div class="rule"><b>Arrows point down</b><span>Route, controller, service, repository, pgtyped. Another module only through its service.</span></div>
+        <div class="rule"><b>SQL lives in .sql files</b><span>pgtyped checks it against a migrated database; generated files are committed and never edited.</span></div>
+        <div class="rule"><b>Four shapes, two conversions</b><span>Row to model in the repository; DTO to input and model to response in the controller.</span></div>
+        <div class="rule"><b>Every input is validated</b><span>zod, <code>.strict()</code>; unknown fields are a 400; error keys are the JSON names.</span></div>
+        <div class="rule"><b>One error writer</b><span><code>errorHandler</code> writes every error body as a problem document and logs each failure once.</span></div>
+        <div class="rule"><b>Use cases open transactions</b><span>Steps take <code>tx</code> and join; no outside calls inside a transaction.</span></div>
+        <div class="rule"><b>Concurrency by design</b><span>Conditional updates, stable lock order, receipt counter row last; READ COMMITTED stays.</span></div>
+        <div class="rule"><b>Three access checks</b><span><code>authenticate</code> and <code>requirePermission</code> on the route; <code>assertOutletAccess</code> in the service.</span></div>
+        <div class="rule"><b>Money is an integer</b><span>Minor units, <code>bigint</code> in Postgres, <code>number</code> in TypeScript, never a float.</span></div>
+        <div class="rule"><b>Log IDs, not people</b><span>pino JSON to stdout; never bodies, passwords, tokens, cookies or emails.</span></div>
+        <div class="rule"><b>Config is explicit</b><span>No <code>process.env</code> outside <code>platform/config</code> and <code>main.ts</code>.</span></div>
+        <div class="rule"><b>Test against real Postgres</b><span>testcontainers for repositories, use cases and the sales concurrency tests; never mock the database.</span></div>
+      </div>
+    </section>
+
+    <footer>Source of truth: <code>docs/backend-design-patterns.md</code>, with the short version in <code>.claude/rules/backend.md</code>, <code>database.md</code> and <code>sales.md</code>. This page explains them; when they change, this page changes in the same pull request.</footer>
+  </main>
+</div>
+</body>
+</html>

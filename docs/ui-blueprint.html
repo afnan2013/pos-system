@@ -1,0 +1,1092 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>POS UI Blueprint</title>
+<meta name="description" content="Page-by-page blueprint of the POS System web app: the HQ console and the outlet sell screen.">
+<style>
+/* The page is drawn with the proposed app theme: shadcn token names, light and dark values. */
+:root {
+  --background: oklch(0.985 0.003 250);
+  --foreground: oklch(0.2 0.015 255);
+  --card: oklch(1 0 0);
+  --muted: oklch(0.96 0.005 250);
+  --muted-foreground: oklch(0.5 0.015 255);
+  --border: oklch(0.91 0.007 250);
+  --primary: oklch(0.48 0.12 255);
+  --primary-foreground: oklch(0.99 0 0);
+  --accent: oklch(0.95 0.025 255);
+  --accent-foreground: oklch(0.38 0.1 255);
+  --success: oklch(0.52 0.12 155);
+  --success-soft: oklch(0.95 0.04 155);
+  --warning: oklch(0.58 0.13 70);
+  --warning-soft: oklch(0.96 0.05 85);
+  --destructive: oklch(0.55 0.19 27);
+  --destructive-soft: oklch(0.95 0.035 27);
+  --destructive-foreground: oklch(0.99 0 0);
+  --cat-1: oklch(0.62 0.09 55);
+  --cat-2: oklch(0.6 0.1 150);
+  --cat-3: oklch(0.6 0.1 230);
+  --cat-4: oklch(0.65 0.13 40);
+  --cat-5: oklch(0.7 0.12 90);
+  --radius: 10px;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --background: oklch(0.17 0.01 255);
+    --foreground: oklch(0.95 0.005 255);
+    --card: oklch(0.21 0.012 255);
+    --muted: oklch(0.245 0.012 255);
+    --muted-foreground: oklch(0.7 0.015 255);
+    --border: oklch(0.31 0.014 255);
+    --primary: oklch(0.72 0.12 255);
+    --primary-foreground: oklch(0.17 0.02 255);
+    --accent: oklch(0.3 0.05 255);
+    --accent-foreground: oklch(0.86 0.07 255);
+    --success: oklch(0.76 0.13 155);
+    --success-soft: oklch(0.3 0.05 155);
+    --warning: oklch(0.8 0.12 80);
+    --warning-soft: oklch(0.33 0.05 75);
+    --destructive: oklch(0.7 0.16 27);
+    --destructive-soft: oklch(0.32 0.06 27);
+    --destructive-foreground: oklch(0.17 0.02 27);
+    --cat-1: oklch(0.72 0.09 55);
+    --cat-2: oklch(0.72 0.1 150);
+    --cat-3: oklch(0.72 0.1 230);
+    --cat-4: oklch(0.74 0.12 40);
+    --cat-5: oklch(0.8 0.11 90);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --background: oklch(0.17 0.01 255);
+  --foreground: oklch(0.95 0.005 255);
+  --card: oklch(0.21 0.012 255);
+  --muted: oklch(0.245 0.012 255);
+  --muted-foreground: oklch(0.7 0.015 255);
+  --border: oklch(0.31 0.014 255);
+  --primary: oklch(0.72 0.12 255);
+  --primary-foreground: oklch(0.17 0.02 255);
+  --accent: oklch(0.3 0.05 255);
+  --accent-foreground: oklch(0.86 0.07 255);
+  --success: oklch(0.76 0.13 155);
+  --success-soft: oklch(0.3 0.05 155);
+  --warning: oklch(0.8 0.12 80);
+  --warning-soft: oklch(0.33 0.05 75);
+  --destructive: oklch(0.7 0.16 27);
+  --destructive-soft: oklch(0.32 0.06 27);
+  --destructive-foreground: oklch(0.17 0.02 27);
+  --cat-1: oklch(0.72 0.09 55);
+  --cat-2: oklch(0.72 0.1 150);
+  --cat-3: oklch(0.72 0.1 230);
+  --cat-4: oklch(0.74 0.12 40);
+  --cat-5: oklch(0.8 0.11 90);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--background); color: var(--foreground); font-family: var(--font-sans); font-size: 15px; line-height: 1.55; }
+a { color: var(--primary); }
+.wrap { max-width: 1240px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 40px 80px; display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 48px; }
+@media (max-width: 960px) { .wrap { grid-template-columns: minmax(0, 1fr); gap: 24px; padding-block: 24px 64px; } .rail { display: none; } }
+.rail { position: sticky; top: 24px; align-self: start; font-size: 13px; }
+.rail p { margin: 0 0 8px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted-foreground); }
+.rail ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.rail a { display: block; padding: 5px 10px; border-radius: 6px; color: var(--foreground); text-decoration: none; }
+.rail a:hover, .rail a:focus-visible { background: var(--muted); outline: none; }
+main { min-width: 0; display: grid; gap: 64px; }
+section { display: grid; gap: 20px; min-width: 0; scroll-margin-top: 16px; }
+h1, h2, h3, h4, h5 { text-wrap: balance; margin: 0; line-height: 1.2; }
+h1 { font-size: clamp(28px, 4vw, 40px); font-weight: 700; letter-spacing: -0.02em; }
+h2 { font-size: 24px; font-weight: 650; letter-spacing: -0.01em; }
+h3 { font-size: 17px; font-weight: 600; }
+h4 { font-size: 12.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted-foreground); }
+p { margin: 0; max-width: 74ch; }
+.lede { font-size: 17px; color: var(--muted-foreground); max-width: 70ch; }
+.eyebrow { font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--primary); font-weight: 600; }
+.mono, code { font-family: var(--font-mono); font-size: .88em; }
+code { background: var(--muted); border: 1px solid var(--border); padding: 1px 5px; border-radius: 5px; overflow-wrap: anywhere; }
+.num { font-variant-numeric: tabular-nums; }
+.r { text-align: right; }
+.meta { display: flex; flex-wrap: wrap; gap: 8px 20px; font-size: 13px; color: var(--muted-foreground); }
+.meta b { color: var(--foreground); font-weight: 500; }
+.note { border-left: 3px solid var(--primary); background: var(--accent); padding: 12px 16px; border-radius: 0 8px 8px 0; font-size: 14px; max-width: 82ch; }
+.note.warn { border-left-color: var(--warning); background: var(--warning-soft); }
+.prop { font-size: 11px; font-weight: 600; color: var(--accent-foreground); background: var(--accent); border-radius: 999px; padding: 1px 7px; white-space: nowrap; }
+.chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; padding: 1px 9px; border-radius: 999px; border: 1px solid var(--border); background: var(--card); white-space: nowrap; line-height: 1.6; }
+.chip.good { background: var(--success-soft); border-color: transparent; color: var(--success); }
+.chip.warn { background: var(--warning-soft); border-color: transparent; color: var(--warning); }
+.chip.bad { background: var(--destructive-soft); border-color: transparent; color: var(--destructive); }
+.chip.info { background: var(--accent); border-color: transparent; color: var(--accent-foreground); }
+.chip.grey { background: var(--muted); color: var(--muted-foreground); }
+.grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 760px) { .grid2, .grid3 { grid-template-columns: minmax(0, 1fr); } }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; min-width: 0; display: grid; gap: 10px; align-content: start; }
+.card p { font-size: 14px; }
+ul.tight { margin: 0; padding-left: 18px; display: grid; gap: 4px; font-size: 14px; }
+.scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); }
+table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+th { font-size: 12px; font-weight: 600; color: var(--muted-foreground); background: var(--muted); white-space: nowrap; }
+th.r, td.r { text-align: right; }
+tr:last-child td { border-bottom: 0; }
+td.route { font-family: var(--font-mono); font-size: 12.5px; white-space: nowrap; }
+tr.group td { background: var(--muted); font-weight: 600; font-size: 12px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted-foreground); }
+.example { font-size: 11.5px; color: var(--muted-foreground); font-style: italic; }
+
+/* mock app frame */
+.mock { border: 1px solid var(--border); border-radius: 14px; overflow: hidden; background: var(--background); box-shadow: 0 1px 2px oklch(0 0 0 / .04), 0 12px 32px -12px oklch(0 0 0 / .14); }
+.topbar { display: flex; align-items: center; gap: 14px; padding: 8px 14px; border-bottom: 1px solid var(--border); background: var(--card); min-height: 52px; flex-wrap: wrap; }
+.topbar .brand { font-weight: 650; font-size: 14px; white-space: nowrap; display: flex; align-items: center; gap: 8px; }
+.topbar nav { display: flex; gap: 4px; flex: 1; min-width: 0; overflow-x: auto; }
+.topbar nav span { padding: 8px 12px; border-radius: 8px; font-size: 13.5px; color: var(--muted-foreground); white-space: nowrap; }
+.topbar nav span.on { background: var(--accent); color: var(--accent-foreground); font-weight: 600; }
+.topbar .who { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted-foreground); white-space: nowrap; margin-left: auto; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--success); display: inline-block; }
+.avatar { width: 30px; height: 30px; border-radius: 50%; background: var(--accent); color: var(--accent-foreground); display: grid; place-items: center; font-size: 11.5px; font-weight: 600; }
+.shell { display: grid; grid-template-columns: 196px minmax(0, 1fr); min-height: 480px; }
+@media (max-width: 760px) { .shell { grid-template-columns: minmax(0, 1fr); } .side { display: none; } .topbar .who .nm { display: none; } }
+.side { border-right: 1px solid var(--border); background: var(--card); padding: 12px 8px; display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
+.side .brand { font-weight: 650; font-size: 14px; padding: 4px 10px 12px; }
+.side .it { padding: 7px 10px; border-radius: 6px; display: flex; gap: 8px; align-items: center; }
+.side .it.on { background: var(--muted); font-weight: 600; }
+.side .ico { width: 14px; height: 14px; border-radius: 4px; border: 1.5px solid currentColor; opacity: .55; flex: none; }
+.side .foot { margin-top: auto; border-top: 1px solid var(--border); padding-top: 10px; display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted-foreground); }
+.mmain { padding: 18px; display: grid; gap: 14px; min-width: 0; align-content: start; }
+.mhead { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
+.mhead h3 { font-size: 19px; }
+.mhead .sub { font-size: 12.5px; color: var(--muted-foreground); }
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; font-size: 12.5px; background: var(--card); flex-wrap: wrap; }
+.seg span { padding: 5px 11px; border-right: 1px solid var(--border); }
+.seg span:last-child { border-right: 0; }
+.seg span.on { background: var(--muted); font-weight: 600; }
+.kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 980px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.kpi { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; display: grid; gap: 2px; min-width: 0; }
+.kpi .l { font-size: 12px; color: var(--muted-foreground); }
+.kpi .v { font-size: 21px; font-weight: 650; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.kpi .d { font-size: 11.5px; color: var(--muted-foreground); }
+.panel { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; display: grid; gap: 10px; min-width: 0; align-content: start; }
+.panel h5 { font-size: 13px; font-weight: 600; display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.panel h5 small { font-weight: 400; color: var(--muted-foreground); }
+.bars { display: grid; gap: 10px; }
+.bar { display: grid; grid-template-columns: 120px minmax(0, 1fr) auto; gap: 10px; align-items: center; font-size: 12.5px; }
+@media (max-width: 520px) { .bar { grid-template-columns: minmax(0, 1fr) auto; } .bar .track { grid-column: 1 / -1; grid-row: 2; } }
+.bar .track { height: 14px; background: var(--muted); border-radius: 4px; overflow: hidden; }
+.bar .fill { height: 100%; background: var(--primary); border-radius: 4px; }
+.bar b { font-weight: 600; font-variant-numeric: tabular-nums; }
+.tops { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 860px) { .tops { grid-template-columns: minmax(0, 1fr); } }
+.mini { width: 100%; font-size: 12.5px; }
+.mini td, .mini th { padding: 6px 4px; }
+.mini th { background: transparent; padding-top: 0; }
+.tabs { display: flex; gap: 20px; border-bottom: 1px solid var(--border); font-size: 13.5px; overflow-x: auto; }
+.tabs span { padding: 9px 0; color: var(--muted-foreground); white-space: nowrap; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.tabs span.on { color: var(--foreground); font-weight: 600; border-bottom-color: var(--primary); }
+.tabs span em { font-style: normal; font-size: 11px; background: var(--muted); border-radius: 999px; padding: 0 6px; margin-left: 4px; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.toolbar .search { flex: 1; min-width: 160px; }
+.fake-input { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; font-size: 13px; color: var(--muted-foreground); background: var(--card); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.back { font-size: 12.5px; color: var(--muted-foreground); }
+.sw-mini { display: inline-block; width: 30px; height: 18px; border-radius: 999px; background: var(--border); position: relative; vertical-align: middle; }
+.sw-mini::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--card); box-shadow: 0 1px 2px oklch(0 0 0 / .25); }
+.sw-mini.on { background: var(--primary); }
+.sw-mini.on::after { left: 14px; }
+.strike { color: var(--muted-foreground); text-decoration: line-through; }
+
+/* sell screen mock */
+.pos { display: grid; grid-template-columns: minmax(0, 1fr) 330px; min-height: 560px; }
+@media (max-width: 860px) { .pos { grid-template-columns: minmax(0, 1fr); } }
+.pos-left { padding: 14px; display: grid; gap: 12px; align-content: start; min-width: 0; }
+.cats { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 2px; }
+.cats span { padding: 10px 16px; border-radius: 999px; border: 1px solid var(--border); background: var(--card); font-size: 13.5px; white-space: nowrap; min-height: 44px; display: inline-flex; align-items: center; }
+.cats span.on { background: var(--primary); border-color: var(--primary); color: var(--primary-foreground); font-weight: 600; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 10px; }
+.tile { position: relative; background: var(--card); border: 1px solid var(--border); border-left: 5px solid var(--c, var(--cat-1)); border-radius: var(--radius); min-height: 96px; padding: 10px 12px; display: grid; align-content: space-between; gap: 6px; min-width: 0; }
+.tile .n { font-size: 14px; font-weight: 600; line-height: 1.25; overflow-wrap: anywhere; }
+.tile .p { font-size: 14px; font-variant-numeric: tabular-nums; }
+.tile .s { font-size: 11.5px; color: var(--muted-foreground); }
+.tile .s.low { color: var(--warning); font-weight: 600; }
+.tile.out { opacity: .55; border-left-color: var(--border); }
+.tile.out .s { color: var(--destructive); font-weight: 600; }
+.tile .q { position: absolute; top: -8px; right: -8px; min-width: 26px; height: 26px; border-radius: 999px; background: var(--primary); color: var(--primary-foreground); font-size: 12.5px; font-weight: 700; display: grid; place-items: center; padding: 0 6px; }
+.cart { border-left: 1px solid var(--border); background: var(--card); display: flex; flex-direction: column; min-width: 0; }
+@media (max-width: 860px) { .cart { border-left: 0; border-top: 1px solid var(--border); } }
+.cart-h { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; border-bottom: 1px solid var(--border); font-size: 14px; font-weight: 600; }
+.cart-h small { font-weight: 400; color: var(--muted-foreground); font-size: 12.5px; }
+.lines { padding: 6px 14px; display: grid; gap: 0; flex: 1; align-content: start; }
+.line { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 13.5px; }
+.line:last-child { border-bottom: 0; }
+.line .nm { font-weight: 600; overflow-wrap: anywhere; }
+.line .tot { font-variant-numeric: tabular-nums; text-align: right; font-weight: 600; }
+.line .unit { font-size: 12px; color: var(--muted-foreground); font-variant-numeric: tabular-nums; }
+.stepper { display: inline-flex; align-items: center; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; justify-self: end; }
+.stepper span { width: 44px; height: 40px; display: grid; place-items: center; font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.stepper span.b { background: var(--muted); font-size: 18px; color: var(--muted-foreground); }
+.line .flag { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-size: 12.5px; background: var(--warning-soft); color: var(--warning); border-radius: 6px; padding: 6px 8px; font-weight: 600; }
+.line .flag.bad { background: var(--destructive-soft); color: var(--destructive); }
+.line .flag u { text-decoration: none; border: 1px solid currentColor; border-radius: 6px; padding: 3px 8px; font-weight: 600; }
+.line.marked { background: linear-gradient(var(--warning-soft), var(--warning-soft)) left / 3px 100% no-repeat; padding-left: 8px; }
+.cart-f { border-top: 1px solid var(--border); padding: 12px 14px 14px; display: grid; gap: 10px; }
+.sum { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted-foreground); }
+.total { display: flex; justify-content: space-between; align-items: baseline; font-size: 15px; font-weight: 600; }
+.total b { font-size: 26px; font-weight: 700; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+.charge { height: 60px; border-radius: 12px; background: var(--primary); color: var(--primary-foreground); font-size: 18px; font-weight: 700; display: grid; place-items: center; }
+.charge.off { opacity: .45; }
+.states3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+@media (max-width: 980px) { .states3 { grid-template-columns: minmax(0, 1fr); } }
+.state { display: grid; gap: 8px; align-content: start; }
+.state > h4 { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.state .cart { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.receipt { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; display: grid; gap: 8px; font-size: 13px; }
+.receipt .rn { font-family: var(--font-mono); font-size: 18px; font-weight: 600; text-align: center; }
+.receipt .ok { text-align: center; color: var(--success); font-weight: 600; }
+.receipt .rl { display: flex; justify-content: space-between; gap: 8px; font-variant-numeric: tabular-nums; }
+.receipt hr { border: 0; border-top: 1px dashed var(--border); margin: 4px 0; width: 100%; }
+.banner { border-radius: 8px; padding: 10px 12px; font-size: 13px; background: var(--destructive-soft); color: var(--destructive); font-weight: 600; }
+.lock { font-size: 12px; color: var(--muted-foreground); text-align: center; }
+
+/* page spec cards */
+.area { display: grid; gap: 14px; }
+.area > h3 { padding-top: 14px; border-top: 1px solid var(--border); }
+.spec { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; display: grid; gap: 12px; min-width: 0; scroll-margin-top: 16px; }
+.spec header { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: baseline; justify-content: space-between; }
+.spec header .rt { font-family: var(--font-mono); font-size: 12.5px; color: var(--muted-foreground); overflow-wrap: anywhere; }
+.spec dl { margin: 0; display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 8px 16px; font-size: 14px; }
+.spec dt { color: var(--muted-foreground); font-size: 12.5px; padding-top: 2px; }
+.spec dd { margin: 0; min-width: 0; }
+@media (max-width: 560px) { .spec dl { grid-template-columns: minmax(0, 1fr); gap: 2px; } .spec dd { margin-bottom: 8px; } }
+
+/* flow diagram */
+.flow { overflow-x: auto; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
+.flow svg { display: block; min-width: 760px; width: 100%; height: auto; }
+.flow rect.st { fill: var(--muted); stroke: var(--border); }
+.flow rect.st.ok { fill: var(--success-soft); stroke: transparent; }
+.flow rect.st.no { fill: var(--warning-soft); stroke: transparent; }
+.flow rect.st.act { fill: var(--accent); stroke: transparent; }
+.flow text { font-family: var(--font-sans); }
+.flow text.t { fill: var(--foreground); font-size: 13px; font-weight: 600; }
+.flow text.s { fill: var(--muted-foreground); font-size: 11px; }
+.flow text.lbl { fill: var(--muted-foreground); font-size: 11px; }
+.flow path, .flow line { stroke: var(--muted-foreground); fill: none; stroke-width: 1.4; }
+.flow marker path { fill: var(--muted-foreground); stroke: none; }
+
+/* design system gallery */
+.swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+.sw { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: var(--card); min-width: 0; }
+.sw .c { height: 52px; border-bottom: 1px solid var(--border); }
+.sw .t { padding: 8px 10px; display: grid; gap: 1px; font-size: 12px; }
+.sw .t b { font-weight: 600; font-size: 12.5px; }
+.sw .t span { color: var(--muted-foreground); font-family: var(--font-mono); font-size: 11px; overflow-wrap: anywhere; }
+.demo { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; display: grid; gap: 14px; min-width: 0; align-content: start; }
+.demo-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.btn { font: 500 14px/1 var(--font-sans); height: 40px; padding: 0 16px; border-radius: 8px; border: 1px solid var(--border); background: var(--card); color: var(--foreground); display: inline-flex; align-items: center; gap: 8px; }
+.btn.primary { background: var(--primary); border-color: var(--primary); color: var(--primary-foreground); }
+.btn.secondary { background: var(--muted); border-color: var(--muted); }
+.btn.ghost { border-color: transparent; background: transparent; }
+.btn.danger { background: var(--destructive); border-color: var(--destructive); color: var(--destructive-foreground); }
+.btn.sm { height: 32px; padding: 0 12px; font-size: 13px; }
+.btn.off { opacity: .5; }
+.spin { width: 14px; height: 14px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; }
+@media (prefers-reduced-motion: no-preference) { .spin { animation: spin .8s linear infinite; } }
+@keyframes spin { to { transform: rotate(360deg); } }
+.field { display: grid; gap: 6px; font-size: 13px; min-width: 0; }
+.field label { font-weight: 500; }
+.field .hint { font-size: 12px; color: var(--muted-foreground); }
+.field .err { font-size: 12px; color: var(--destructive); }
+.inp { display: flex; align-items: center; height: 40px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); overflow: hidden; min-width: 0; font-size: 14px; }
+.inp span { padding: 0 12px; }
+.inp .pre { height: 100%; display: grid; place-items: center; background: var(--muted); border-right: 1px solid var(--border); color: var(--muted-foreground); }
+.inp.bad { border-color: var(--destructive); }
+.inp.focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--accent); }
+.toast { display: flex; gap: 10px; align-items: flex-start; border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; background: var(--card); box-shadow: 0 8px 24px -10px oklch(0 0 0 / .25); font-size: 13.5px; }
+.toast i { width: 8px; height: 8px; border-radius: 50%; margin-top: 6px; flex: none; }
+.dialog { border: 1px solid var(--border); border-radius: 12px; background: var(--card); box-shadow: 0 16px 40px -16px oklch(0 0 0 / .3); padding: 18px; display: grid; gap: 12px; }
+.dialog p { font-size: 13.5px; color: var(--muted-foreground); }
+.dialog .demo-row { justify-content: flex-end; }
+.empty { border: 1.5px dashed var(--border); border-radius: var(--radius); padding: 22px; display: grid; gap: 8px; justify-items: center; text-align: center; }
+.empty p { font-size: 13.5px; color: var(--muted-foreground); }
+.skel { height: 12px; border-radius: 6px; background: var(--muted); }
+.type-scale { display: grid; gap: 10px; }
+.type-scale div { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 12px; align-items: baseline; }
+@media (max-width: 520px) { .type-scale div { grid-template-columns: minmax(0, 1fr); gap: 0; } }
+.type-scale .k { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted-foreground); }
+.space { display: grid; gap: 6px; }
+.space div { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 10px; align-items: center; font-size: 12px; }
+.space i { display: block; height: 10px; background: var(--primary); border-radius: 3px; }
+.targets { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end; }
+.targets div { display: grid; gap: 6px; justify-items: center; font-size: 11.5px; color: var(--muted-foreground); text-align: center; }
+.targets b { display: grid; place-items: center; border: 1.5px dashed var(--primary); border-radius: 8px; color: var(--primary); font-size: 11px; background: var(--accent); }
+pre.code { margin: 0; padding: 16px; font-family: var(--font-mono); font-size: 12.5px; line-height: 1.6; overflow-x: auto; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <nav class="rail" aria-label="Contents">
+    <p>Contents</p>
+    <ol>
+      <li><a href="#brief">Brief</a></li>
+      <li><a href="#people">Who uses it</a></li>
+      <li><a href="#shells">App shells</a></li>
+      <li><a href="#routes">All routes</a></li>
+      <li><a href="#sell">Sell screen</a></li>
+      <li><a href="#outlet-detail">Outlet detail</a></li>
+      <li><a href="#overview">HQ overview</a></li>
+      <li><a href="#pages">Page specs</a></li>
+      <li><a href="#patterns">Shared patterns</a></li>
+      <li><a href="#system">Design system</a></li>
+      <li><a href="#decisions">Open decisions</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <section id="brief">
+      <span class="eyebrow">Web app &middot; UI blueprint</span>
+      <h1>POS System UI Blueprint</h1>
+      <p class="lede">Every page of the POS System web app: the HQ console where head office runs outlets, menu, prices, people and reports, and the outlet app where cashiers sell. For each page: who opens it, the permission it needs, what it shows, what people can do there, and how it looks while loading, when empty, on error and when the user has no access.</p>
+      <div class="meta">
+        <span>Status <b>target design, 2026-11-25; each feature's spec confirms or changes its part</b></span>
+        <span>Built <b>nothing yet</b></span>
+        <span>Engineering rules <b>docs/frontend-engineering.md</b></span>
+      </div>
+      <div class="note">Routes, endpoints and permission keys here are the agreed ones. Anything this page adds beyond them is tagged <span class="prop">proposed</span> and is confirmed at the spec gate of the feature that first needs it. A page that ends up different from this blueprint updates it in the same change.</div>
+      <div class="grid3">
+        <div class="card"><h4>Money</h4><p>Stored and sent as integer minor units. Shown with two decimals and tabular figures: <span class="mono">৳1,240.00</span>. One company currency, configured once as <code>CURRENCY</code> (default <code>BDT</code>, taka) <span class="prop">proposed</span>, with no currency column; formatted only in <code>lib/money.ts</code>.</p></div>
+        <div class="card"><h4>Receipt numbers</h4><p>Stored as an integer per outlet; shown as outlet code plus a six-digit number: <span class="mono">DHK01-000124</span>.</p></div>
+        <div class="card"><h4>Time and language</h4><p>English only. Times arrive in UTC and show in the device's time zone: <span class="mono">25 Nov 2026, 4:15 pm</span>, or <span class="mono">4:15 pm</span> for today.</p></div>
+      </div>
+    </section>
+
+    <section id="people">
+      <h2>Who uses it</h2>
+      <p>Two kinds of user, never mixed. A user with no outlet is an <b>HQ user</b> and only ever sees the HQ console. A user tied to an outlet is an <b>outlet user</b> and only ever sees that outlet's app. What each one sees inside their area follows their role's permissions.</p>
+      <div class="grid3">
+        <div class="card">
+          <h3>HQ users</h3>
+          <p>Built-in role <b>HQ Admin</b>: every HQ permission plus <code>sales.read</code> and <code>reports.read</code>. HQ can create narrower HQ roles, for example a menu editor holding only <code>menu.manage</code> and <code>menu.assign</code>.</p>
+          <p><b>Device:</b> a laptop or desktop, a few sessions a day. Dense tables are fine.</p>
+        </div>
+        <div class="card">
+          <h3>Outlet managers</h3>
+          <p>Seeded role <b>Outlet Manager</b>: <code>menu.read</code>, <code>inventory.read</code>, <code>inventory.adjust</code>, <code>sales.create</code>, <code>sales.read</code>, <code>reports.read</code>. Sells at busy times, receives deliveries, fixes stock counts, checks the day's numbers.</p>
+          <p><b>Device:</b> the counter tablet, or a laptop in the back office.</p>
+        </div>
+        <div class="card">
+          <h3>Cashiers</h3>
+          <p>Seeded role <b>Cashier</b>: <code>menu.read</code>, <code>sales.create</code>, <code>sales.read</code>. Lives on the sell screen for the whole shift, with a queue waiting; reprints a receipt from the sales list now and then.</p>
+          <p><b>Device:</b> a 10 to 11 inch tablet in landscape, or a laptop with a touch screen. Every control is sized for a finger.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="shells">
+      <h2>App shells</h2>
+      <p>Two shells, one per area. Menu entries and tabs the user cannot use are <b>hidden</b>, never greyed out. If the user cannot open an area's first page, its index route sends them to the first entry they can open <span class="prop">proposed</span>; with none at all, they land on <code>/403</code>.</p>
+
+      <h3>HQ console: left sidebar</h3>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Menu entry</th><th>Lucide icon</th><th>Route</th><th>Shown with</th></tr></thead>
+          <tbody>
+            <tr><td><b>Overview</b></td><td class="mono">layout-dashboard</td><td class="route">/hq</td><td><code>reports.read</code></td></tr>
+            <tr><td><b>Outlets</b></td><td class="mono">building-2</td><td class="route">/hq/outlets</td><td><code>outlets.manage</code>, <code>menu.assign</code> or <code>inventory.manage</code></td></tr>
+            <tr><td><b>Menu</b></td><td class="mono">utensils</td><td class="route">/hq/menu</td><td><code>menu.manage</code></td></tr>
+            <tr><td><b>Reports</b></td><td class="mono">chart-column</td><td class="route">/hq/reports</td><td><code>reports.read</code></td></tr>
+            <tr><td><b>Users</b></td><td class="mono">users</td><td class="route">/hq/users</td><td><code>users.manage</code></td></tr>
+            <tr><td><b>Roles</b></td><td class="mono">shield-check</td><td class="route">/hq/roles</td><td><code>roles.manage</code></td></tr>
+            <tr><td><b>Account menu</b> <span class="example">pinned to the bottom</span></td><td class="mono">circle-user</td><td>-</td><td>everyone: name, email, theme (Light, Dark, System), Sign out</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Under 768 px wide the sidebar becomes a sheet opened from a menu button in a slim top bar. The sidebar can collapse to icons on a laptop; that preference is kept in the browser.</p>
+
+      <h3>Outlet app: top bar</h3>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Part</th><th>Shows</th><th>Shown with</th></tr></thead>
+          <tbody>
+            <tr><td><b>Outlet name and code</b></td><td>"Gulshan &middot; DHK01", from <code>me.outlet</code>; there is no outlet picker</td><td>everyone</td></tr>
+            <tr><td><b>Sell</b></td><td class="route">/outlet</td><td><code>sales.create</code></td></tr>
+            <tr><td><b>Sales</b></td><td class="route">/outlet/sales</td><td><code>sales.read</code></td></tr>
+            <tr><td><b>Stock</b></td><td class="route">/outlet/stock</td><td><code>inventory.read</code></td></tr>
+            <tr><td><b>Reports</b></td><td class="route">/outlet/reports</td><td><code>reports.read</code></td></tr>
+            <tr><td><b>Connection dot</b> <span class="prop">proposed</span></td><td>green when online; red with "Offline" when the browser reports no network</td><td>everyone</td></tr>
+            <tr><td><b>Account menu</b></td><td>name, role, theme, Sign out</td><td>everyone</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>A top bar, not a sidebar: the sell screen needs the full width for tiles and the cart. Every nav entry is at least 44 px tall. Under 640 px the nav moves to a bottom tab bar <span class="prop">proposed</span>.</p>
+      <div class="mock" role="img" aria-label="Outlet app top bar for a cashier: outlet name, Sell and Sales entries, connection dot and account menu">
+        <div class="topbar">
+          <span class="brand">Gulshan <span class="chip grey mono">DHK01</span></span>
+          <nav><span class="on">Sell</span><span>Sales</span></nav>
+          <span class="who"><span class="dot"></span><span class="nm">Sara Ahmed &middot; Cashier</span><span class="avatar">SA</span></span>
+        </div>
+      </div>
+      <p class="example">A cashier's top bar: Stock and Reports are hidden because the Cashier role holds neither key.</p>
+    </section>
+
+    <section id="routes">
+      <h2>All routes</h2>
+      <p>Guards run outermost first: <code>RequireAuth</code> (signed in?), <code>RequireArea</code> <span class="prop">proposed</span> (HQ user on <code>/hq/*</code>, outlet user on <code>/outlet/*</code>, otherwise sent to their own area), then <code>RequirePermission</code> per page. The API checks every request again; the outlet scope check in the API keeps an outlet user to their own outlet.</p>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Route</th><th>Page</th><th>Permission to open</th><th>What it shows</th></tr></thead>
+          <tbody>
+            <tr class="group"><td colspan="4">Public and system</td></tr>
+            <tr><td class="route"><a href="#p-login">/login</a></td><td>Sign in</td><td>public</td><td>Email and password; sends the user to their area</td></tr>
+            <tr><td class="route"><a href="#p-403">/403</a></td><td>No access</td><td>signed in</td><td>For a user whose role opens no page</td></tr>
+            <tr><td class="route"><a href="#p-404">any other path</a></td><td>Not found</td><td>public</td><td>Link back home</td></tr>
+            <tr class="group"><td colspan="4">HQ console (HQ users)</td></tr>
+            <tr><td class="route"><a href="#p-hq">/hq</a></td><td>Overview</td><td><code>reports.read</code></td><td>Revenue by outlet and top items for a date range</td></tr>
+            <tr><td class="route"><a href="#p-outlets">/hq/outlets</a></td><td>Outlets</td><td><code>outlets.manage</code>, <code>menu.assign</code> or <code>inventory.manage</code></td><td>Every outlet; create one with <code>outlets.manage</code></td></tr>
+            <tr><td class="route"><a href="#p-outlet">/hq/outlets/:outletId</a></td><td>Outlet detail</td><td><code>outlets.manage</code>, <code>menu.assign</code> or <code>inventory.manage</code>; each tab needs its own key</td><td>Tabs: menu and prices (<code>menu.assign</code>), stock (<code>inventory.manage</code>), sales (<code>sales.read</code>)</td></tr>
+            <tr><td class="route"><a href="#p-menu">/hq/menu</a></td><td>Master menu</td><td><code>menu.manage</code></td><td>Every master item with base price and status</td></tr>
+            <tr><td class="route"><a href="#p-menu-new">/hq/menu/new</a></td><td>New menu item</td><td><code>menu.manage</code></td><td>The item form</td></tr>
+            <tr><td class="route"><a href="#p-menu-item">/hq/menu/:menuItemId</a></td><td>Edit menu item</td><td><code>menu.manage</code></td><td>The item form, filled</td></tr>
+            <tr><td class="route"><a href="#p-hq-reports">/hq/reports</a></td><td>Reports</td><td><code>reports.read</code></td><td>Revenue by outlet and top 5 items, filtered by range and outlet</td></tr>
+            <tr><td class="route"><a href="#p-users">/hq/users</a></td><td>Users</td><td><code>users.manage</code></td><td>Every user with outlet, role, status; create a user</td></tr>
+            <tr><td class="route"><a href="#p-user">/hq/users/:userId</a></td><td>User detail</td><td><code>users.manage</code></td><td>Edit name, role, outlet, status; reset password</td></tr>
+            <tr><td class="route"><a href="#p-roles">/hq/roles</a></td><td>Roles</td><td><code>roles.manage</code></td><td>Every role with scope and permission count</td></tr>
+            <tr><td class="route"><a href="#p-role-new">/hq/roles/new</a></td><td>New role</td><td><code>roles.manage</code></td><td>Name, scope and permissions</td></tr>
+            <tr><td class="route"><a href="#p-role">/hq/roles/:roleId</a></td><td>Edit role</td><td><code>roles.manage</code></td><td>The role form; system roles read-only</td></tr>
+            <tr class="group"><td colspan="4">Outlet app (outlet users)</td></tr>
+            <tr><td class="route"><a href="#p-sell">/outlet</a></td><td>Sell</td><td><code>sales.create</code> (data needs <code>menu.read</code>)</td><td>Menu grid by category, cart, Charge, receipt</td></tr>
+            <tr><td class="route"><a href="#p-sales">/outlet/sales</a></td><td>Sales</td><td><code>sales.read</code></td><td>This outlet's sales, newest first</td></tr>
+            <tr><td class="route"><a href="#p-sale">/outlet/sales/:saleId</a></td><td>Sale detail</td><td><code>sales.read</code></td><td>The receipt; reprint</td></tr>
+            <tr><td class="route"><a href="#p-stock">/outlet/stock</a></td><td>Stock</td><td><code>inventory.read</code>; changes need <code>inventory.adjust</code></td><td>Quantity per item; restock and adjust</td></tr>
+            <tr><td class="route"><a href="#p-outlet-reports">/outlet/reports</a></td><td>Reports</td><td><code>reports.read</code></td><td>This outlet's revenue and top 5 items</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Search params that are part of a page's state <span class="prop">proposed</span>: <code>?tab=menu|stock|sales</code> on outlet detail, <code>?from=&amp;to=</code> on reports and the overview, <code>?outletId=</code> on HQ reports, <code>?category=</code> on the sell screen, <code>?outletId=&amp;roleId=</code> on users. Each survives a reload and can be shared as a link.</p>
+    </section>
+
+    <section id="sell">
+      <h2>Sell screen</h2>
+      <p>The page that matters most. A cashier taps items, checks the cart, taps <b>Charge</b>, and gets a receipt number from the server. Cart edits are instant and local. Charging is never faked: the sale is shown as done only when the API answers <code>201</code>.</p>
+
+      <div class="mock" role="img" aria-label="Sell screen mock: category chips, a grid of item tiles with prices and stock, and a cart with three lines totalling 1,240 taka and a Charge button">
+        <div class="topbar">
+          <span class="brand">Gulshan <span class="chip grey mono">DHK01</span></span>
+          <nav><span class="on">Sell</span><span>Sales</span><span>Stock</span><span>Reports</span></nav>
+          <span class="who"><span class="dot"></span><span class="nm">Rafi Hasan &middot; Outlet Manager</span><span class="avatar">RH</span></span>
+        </div>
+        <div class="pos">
+          <div class="pos-left">
+            <div class="fake-input">Search by name or SKU &nbsp;&middot;&nbsp; press / to focus</div>
+            <div class="cats"><span class="on">All</span><span>Coffee</span><span>Tea</span><span>Cold drinks</span><span>Food</span><span>Bakery</span></div>
+            <div class="tiles">
+              <div class="tile" style="--c:var(--cat-1)"><span class="n">Espresso</span><span class="p">৳180.00</span><span class="s">34 left</span></div>
+              <div class="tile" style="--c:var(--cat-1)"><span class="q">2</span><span class="n">Cappuccino</span><span class="p">৳250.00</span><span class="s">28 left</span></div>
+              <div class="tile" style="--c:var(--cat-1)"><span class="n">Cafe latte</span><span class="p">৳280.00</span><span class="s">22 left</span></div>
+              <div class="tile" style="--c:var(--cat-3)"><span class="n">Iced americano</span><span class="p">৳260.00</span><span class="s low">4 left</span></div>
+              <div class="tile" style="--c:var(--cat-2)"><span class="n">Masala chai</span><span class="p">৳120.00</span><span class="s">40 left</span></div>
+              <div class="tile" style="--c:var(--cat-3)"><span class="n">Lemon mint cooler</span><span class="p">৳190.00</span><span class="s">15 left</span></div>
+              <div class="tile" style="--c:var(--cat-4)"><span class="q">1</span><span class="n">Chicken club sandwich</span><span class="p">৳420.00</span><span class="s">9 left</span></div>
+              <div class="tile out" style="--c:var(--cat-4)"><span class="n">Beef burger</span><span class="p">৳550.00</span><span class="s">Sold out</span></div>
+              <div class="tile" style="--c:var(--cat-4)"><span class="n">French fries</span><span class="p">৳220.00</span><span class="s">18 left</span></div>
+              <div class="tile" style="--c:var(--cat-5)"><span class="q">2</span><span class="n">Butter croissant</span><span class="p">৳160.00</span><span class="s">12 left</span></div>
+              <div class="tile" style="--c:var(--cat-5)"><span class="n">Chocolate brownie</span><span class="p">৳200.00</span><span class="s">10 left</span></div>
+              <div class="tile" style="--c:var(--cat-3)"><span class="n">Bottled water</span><span class="p">৳40.00</span><span class="s">60 left</span></div>
+            </div>
+          </div>
+          <div class="cart">
+            <div class="cart-h"><span>Current sale <small>5 items</small></span><span class="btn ghost sm">Clear</span></div>
+            <div class="lines">
+              <div class="line"><span class="nm">Cappuccino</span><span class="tot">৳500.00</span><span class="unit">৳250.00 each</span><span class="stepper"><span class="b">&minus;</span><span>2</span><span class="b">+</span></span></div>
+              <div class="line"><span class="nm">Chicken club sandwich</span><span class="tot">৳420.00</span><span class="unit">৳420.00 each</span><span class="stepper"><span class="b">&minus;</span><span>1</span><span class="b">+</span></span></div>
+              <div class="line"><span class="nm">Butter croissant</span><span class="tot">৳320.00</span><span class="unit">৳160.00 each</span><span class="stepper"><span class="b">&minus;</span><span>2</span><span class="b">+</span></span></div>
+            </div>
+            <div class="cart-f">
+              <div class="sum"><span>3 lines &middot; 5 items</span><span>prices at this outlet</span></div>
+              <div class="total"><span>Total</span><b>৳1,240.00</b></div>
+              <div class="charge">Charge ৳1,240.00</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="example">Example data. Gulshan sells Cappuccino at its own price; the tile shows the effective price, never the base price. Under 860 px the cart drops below the grid; on a phone it becomes a bottom bar "View cart &middot; 5 items &middot; ৳1,240.00" that opens a sheet <span class="prop">proposed</span>.</p>
+
+      <h3>Charging: what happens next</h3>
+      <div class="flow">
+        <svg viewBox="0 0 900 280" role="img" aria-label="Cart states. Editing goes to Charging on Charge. Charging goes to Receipt on a 201, back to Editing on 409, 400 or 401 with the cart and key kept, or to Unknown on a network error, timeout or 5xx. Unknown goes back to Charging on Retry with the same key. Receipt goes to Editing on New sale with a new key.">
+          <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+          <rect class="st" x="20" y="100" width="160" height="62" rx="8"/><text class="t" x="100" y="126" text-anchor="middle">Editing</text><text class="s" x="100" y="144" text-anchor="middle">cart changes are local</text>
+          <rect class="st act" x="300" y="100" width="160" height="62" rx="8"/><text class="t" x="380" y="126" text-anchor="middle">Charging</text><text class="s" x="380" y="144" text-anchor="middle">button disabled</text>
+          <rect class="st ok" x="620" y="22" width="190" height="62" rx="8"/><text class="t" x="715" y="48" text-anchor="middle">Receipt</text><text class="s" x="715" y="66" text-anchor="middle">DHK01-000124, cart cleared</text>
+          <rect class="st no" x="620" y="176" width="190" height="62" rx="8"/><text class="t" x="715" y="202" text-anchor="middle">Unknown, cart locked</text><text class="s" x="715" y="220" text-anchor="middle">may already be saved</text>
+          <line x1="180" y1="131" x2="298" y2="131" marker-end="url(#arr)"/><text class="lbl" x="239" y="122" text-anchor="middle">Charge</text>
+          <line x1="460" y1="116" x2="618" y2="60" marker-end="url(#arr)"/><text class="lbl" x="520" y="76" text-anchor="middle">201 sale</text>
+          <line x1="460" y1="148" x2="618" y2="200" marker-end="url(#arr)"/><text class="lbl" x="560" y="160" text-anchor="middle">network, timeout, 5xx</text>
+          <path d="M620 228 C 540 272, 420 262, 392 164" marker-end="url(#arr)"/><text class="lbl" x="500" y="270" text-anchor="middle">Retry (same key)</text>
+          <path d="M320 162 C 290 228, 140 228, 106 164" marker-end="url(#arr)"/><text class="lbl" x="214" y="236" text-anchor="middle">409, 400, 401: cart and key kept</text>
+          <path d="M620 40 C 420 0, 150 4, 96 98" marker-end="url(#arr)"/><text class="lbl" x="303" y="38" text-anchor="middle">New sale (new key)</text>
+        </svg>
+      </div>
+      <ul class="tight">
+        <li><b>Idempotency key:</b> one UUID per cart, made when the first item is added, sent in the <code>Idempotency-Key</code> header of <code>POST /api/v1/outlets/:outletId/sales</code>, and the same on every retry. A repeat with the same key returns the original sale, so a retry never sells twice.</li>
+        <li><b>The cart lives in the tab</b> <span class="prop">proposed</span>: a reload, or signing in again after the hourly session ends, brings back the same cart and key.</li>
+        <li><b>Stock is capped in the cart:</b> the stepper stops at the stock the menu reports, so "Only 4 left" shows before charging, not after.</li>
+      </ul>
+
+      <div class="states3">
+        <div class="state">
+          <h4>201: receipt</h4>
+          <div class="receipt" role="img" aria-label="Receipt panel after a successful sale">
+            <span class="ok">Sale complete</span>
+            <span class="rn">DHK01-000124</span>
+            <span class="example" style="text-align:center">25 Nov 2026, 4:15 pm &middot; Rafi Hasan</span>
+            <hr>
+            <span class="rl"><span>2 &times; Cappuccino</span><span>৳500.00</span></span>
+            <span class="rl"><span>1 &times; Chicken club sandwich</span><span>৳420.00</span></span>
+            <span class="rl"><span>2 &times; Butter croissant</span><span>৳320.00</span></span>
+            <hr>
+            <span class="rl"><b>Total</b><b>৳1,240.00</b></span>
+            <div class="demo-row" style="justify-content:stretch"><span class="btn" style="flex:1;justify-content:center">Print</span><span class="btn primary" style="flex:1;justify-content:center">New sale</span></div>
+          </div>
+          <p class="example">Totals and prices on the receipt are the server's, frozen in the sale.</p>
+        </div>
+        <div class="state">
+          <h4>409: not enough stock</h4>
+          <div class="cart" role="img" aria-label="Cart after a 409: two lines marked short">
+            <div class="lines">
+              <div class="line marked"><span class="nm">Iced americano</span><span class="tot">৳1,040.00</span><span class="unit">৳260.00 each</span><span class="stepper"><span class="b">&minus;</span><span>4</span><span class="b">+</span></span><span class="flag">Only 2 left <u>Set to 2</u></span></div>
+              <div class="line marked"><span class="nm">Chocolate brownie</span><span class="tot">৳200.00</span><span class="unit">৳200.00 each</span><span class="stepper"><span class="b">&minus;</span><span>1</span><span class="b">+</span></span><span class="flag bad">Sold out <u>Remove</u></span></div>
+              <div class="line"><span class="nm">Masala chai</span><span class="tot">৳240.00</span><span class="unit">৳120.00 each</span><span class="stepper"><span class="b">&minus;</span><span>2</span><span class="b">+</span></span></div>
+            </div>
+            <div class="cart-f"><div class="total"><span>Total</span><b>৳1,480.00</b></div><div class="charge off">Charge ৳1,480.00</div></div>
+          </div>
+          <p class="example">The toast shows the API's message. The menu refetches and every short line is marked at once. Charge is enabled again once no line is short. Nothing was saved, so the cart stays editable with the same key. A 409 for an item that is no longer on sale (unassigned, unavailable or inactive) works the same way: the line is marked "No longer on sale" with <u>Remove</u>.</p>
+        </div>
+        <div class="state">
+          <h4>No answer: locked</h4>
+          <div class="cart" role="img" aria-label="Cart locked after a network failure with a Retry button">
+            <div class="lines">
+              <div class="banner">We couldn't confirm the sale. Retry before doing anything else.</div>
+              <div class="line"><span class="nm">Cappuccino</span><span class="tot">৳500.00</span><span class="unit">2 &times; ৳250.00</span><span></span></div>
+              <div class="line"><span class="nm">Chicken club sandwich</span><span class="tot">৳420.00</span><span class="unit">1 &times; ৳420.00</span><span></span></div>
+            </div>
+            <div class="cart-f"><div class="total"><span>Total</span><b>৳920.00</b></div><div class="charge">Retry</div><span class="lock">Cart locked: the sale may already be recorded. Discard cart is in the &middot;&middot;&middot; menu, behind a warning.</span></div>
+          </div>
+          <p class="example">Network error, timeout or 5xx. Retry sends the same key; if the first attempt was saved, the API returns that sale and the receipt appears.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="outlet-detail">
+      <h2>Outlet detail (HQ)</h2>
+      <p>HQ's working page for one outlet: what it sells and at what price, how much stock it holds, and what it has sold. Each tab appears only with its key, so a user who holds only <code>menu.assign</code> sees one tab and no tab bar.</p>
+      <div class="mock" role="img" aria-label="Outlet detail mock for Gulshan, on the Menu and prices tab, showing assigned items with base and outlet prices, availability and stock">
+        <div class="shell">
+          <div class="side">
+            <div class="brand">POS System &middot; HQ</div>
+            <div class="it"><i class="ico"></i>Overview</div>
+            <div class="it on"><i class="ico"></i>Outlets</div>
+            <div class="it"><i class="ico"></i>Menu</div>
+            <div class="it"><i class="ico"></i>Reports</div>
+            <div class="it"><i class="ico"></i>Users</div>
+            <div class="it"><i class="ico"></i>Roles</div>
+            <div class="foot"><span class="avatar">NK</span>Nadia Karim</div>
+          </div>
+          <div class="mmain">
+            <span class="back">&larr; Outlets</span>
+            <div class="mhead">
+              <div><h3>Gulshan <span class="chip grey mono">DHK01</span> <span class="chip good">Active</span></h3><span class="sub">House 12, Road 90, Gulshan 2</span></div>
+              <span class="btn sm">Edit outlet</span>
+            </div>
+            <div class="tabs"><span class="on">Menu and prices <em>12</em></span><span>Stock</span><span>Sales</span></div>
+            <div class="toolbar"><span class="fake-input search">Search items</span><span class="seg"><span class="on">All</span><span>Own price</span><span>Unavailable</span></span><span class="btn primary sm">Assign item</span></div>
+            <div class="scroll">
+              <table>
+                <thead><tr><th>Item</th><th>SKU</th><th>Category</th><th class="r">Base price</th><th class="r">Outlet price</th><th>Available</th><th class="r">Stock</th><th></th></tr></thead>
+                <tbody>
+                  <tr><td>Espresso</td><td class="mono">COF-ESP</td><td>Coffee</td><td class="r num">৳180.00</td><td class="r num">৳180.00</td><td><span class="sw-mini on"></span></td><td class="r num">34</td><td>&middot;&middot;&middot;</td></tr>
+                  <tr><td>Cappuccino</td><td class="mono">COF-CAP</td><td>Coffee</td><td class="r num strike">৳230.00</td><td class="r num">৳250.00 <span class="chip info">own</span></td><td><span class="sw-mini on"></span></td><td class="r num">28</td><td>&middot;&middot;&middot;</td></tr>
+                  <tr><td>Iced americano</td><td class="mono">CLD-AME</td><td>Cold drinks</td><td class="r num">৳260.00</td><td class="r num">৳260.00</td><td><span class="sw-mini on"></span></td><td class="r num"><span class="chip warn">4</span></td><td>&middot;&middot;&middot;</td></tr>
+                  <tr><td>Beef burger</td><td class="mono">FOD-BRG</td><td>Food</td><td class="r num">৳550.00</td><td class="r num">৳550.00</td><td><span class="sw-mini on"></span></td><td class="r num"><span class="chip bad">0</span></td><td>&middot;&middot;&middot;</td></tr>
+                  <tr><td>Chocolate brownie</td><td class="mono">BAK-BRW</td><td>Bakery</td><td class="r num strike">৳220.00</td><td class="r num">৳200.00 <span class="chip info">own</span></td><td><span class="sw-mini on"></span></td><td class="r num">10</td><td>&middot;&middot;&middot;</td></tr>
+                  <tr><td>Masala chai</td><td class="mono">TEA-MSL</td><td>Tea</td><td class="r num">৳120.00</td><td class="r num">৳120.00</td><td><span class="sw-mini"></span> <span class="chip grey">Unavailable</span></td><td class="r num">40</td><td>&middot;&middot;&middot;</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <span class="example">Example data. Row menu: Change price, Use base price, Unassign.</span>
+          </div>
+        </div>
+      </div>
+      <div class="grid3">
+        <div class="card"><h4>Menu and prices &middot; <code>menu.assign</code></h4><p>From <code>GET /outlets/:outletId/menu</code>. <b>Assign item</b> opens a dialog listing master items not yet assigned (from <code>GET /menu-items</code>, which <code>menu.assign</code> may read), with an optional outlet price and "Available". <b>Change price</b> sets the override; <b>Use base price</b> clears it (sent as <code>null</code>). The switch sets availability. All three use <code>PUT /outlets/:outletId/menu/:menuItemId</code>. <b>Unassign</b> uses <code>DELETE</code> behind a confirmation.</p></div>
+        <div class="card"><h4>Stock &middot; <code>inventory.manage</code></h4><p>From <code>GET /outlets/:outletId/inventory</code>: item, SKU, quantity, low-stock chip at 5 or fewer <span class="prop">proposed</span>, last change. <b>Restock</b> (positive amount, optional note) and <b>Adjust</b> (signed amount, note required <span class="prop">proposed</span>) post to <code>.../inventory/:menuItemId/movements</code> with reason <code>restock</code> or <code>adjustment</code>. A change below zero is refused and the API's message shows in the dialog.</p></div>
+        <div class="card"><h4>Sales &middot; <code>sales.read</code></h4><p>From <code>GET /outlets/:outletId/sales</code>, newest first, "Load more" with the API's cursor. Columns: receipt number, time, items, total. A row opens a side sheet with the sale's lines from <code>GET /outlets/:outletId/sales/:saleId</code> <span class="prop">proposed</span>, since there is no HQ route for one sale.</p></div>
+      </div>
+      <div class="note warn"><b>Unassign once sold.</b> The API refuses to unassign an item that has sales or stock at the outlet (409). The dialog then reads "Cappuccino has sales or stock at Gulshan, so it can't be removed. Mark it unavailable instead?" with <b>Mark unavailable</b> as the primary button.</div>
+    </section>
+
+    <section id="overview">
+      <h2>HQ overview</h2>
+      <p>The first page for an HQ user. It answers two questions for a date range: <b>how much did each outlet sell</b>, and <b>what sells best where</b>. Both come from the reports endpoints, so the page needs <code>reports.read</code>.</p>
+      <div class="mock" role="img" aria-label="HQ overview mock for the last 30 days: total revenue 482,350 taka from 1,946 sales across 3 outlets, a bar per outlet, and top 5 items per outlet">
+        <div class="shell">
+          <div class="side">
+            <div class="brand">POS System &middot; HQ</div>
+            <div class="it on"><i class="ico"></i>Overview</div>
+            <div class="it"><i class="ico"></i>Outlets</div>
+            <div class="it"><i class="ico"></i>Menu</div>
+            <div class="it"><i class="ico"></i>Reports</div>
+            <div class="it"><i class="ico"></i>Users</div>
+            <div class="it"><i class="ico"></i>Roles</div>
+            <div class="foot"><span class="avatar">NK</span>Nadia Karim</div>
+          </div>
+          <div class="mmain">
+            <div class="mhead">
+              <div><h3>Overview</h3><span class="sub">26 Oct to 25 Nov 2026</span></div>
+              <div class="seg"><span>Today</span><span>7 days</span><span class="on">30 days</span><span>Custom</span></div>
+            </div>
+            <div class="kpis">
+              <div class="kpi"><span class="l">Revenue</span><span class="v">৳482,350.00</span><span class="d">all outlets</span></div>
+              <div class="kpi"><span class="l">Sales</span><span class="v">1,946</span><span class="d">receipts issued</span></div>
+              <div class="kpi"><span class="l">Average sale</span><span class="v">৳247.87</span><span class="d">revenue / sales</span></div>
+              <div class="kpi"><span class="l">Outlets with sales</span><span class="v">3 of 3</span><span class="d">active outlets</span></div>
+            </div>
+            <div class="panel">
+              <h5>Revenue by outlet <small>click an outlet to see its sales</small></h5>
+              <div class="bars">
+                <div class="bar"><span>Gulshan &middot; DHK01</span><span class="track"><span class="fill" style="display:block;width:100%"></span></span><b>৳210,400.00 &middot; 842</b></div>
+                <div class="bar"><span>Dhanmondi &middot; DHK02</span><span class="track"><span class="fill" style="display:block;width:80.3%"></span></span><b>৳168,950.00 &middot; 691</b></div>
+                <div class="bar"><span>Agrabad &middot; CTG01</span><span class="track"><span class="fill" style="display:block;width:49%"></span></span><b>৳103,000.00 &middot; 413</b></div>
+              </div>
+            </div>
+            <div class="tops">
+              <div class="panel"><h5>Gulshan <small>top 5 by quantity</small></h5><table class="mini"><tbody><tr><td>Cappuccino</td><td class="r num">312</td></tr><tr><td>Cafe latte</td><td class="r num">245</td></tr><tr><td>Chicken club sandwich</td><td class="r num">180</td></tr><tr><td>Butter croissant</td><td class="r num">166</td></tr><tr><td>Espresso</td><td class="r num">121</td></tr></tbody></table></div>
+              <div class="panel"><h5>Dhanmondi <small>top 5 by quantity</small></h5><table class="mini"><tbody><tr><td>Masala chai</td><td class="r num">288</td></tr><tr><td>Cappuccino</td><td class="r num">204</td></tr><tr><td>French fries</td><td class="r num">171</td></tr><tr><td>Beef burger</td><td class="r num">139</td></tr><tr><td>Lemon mint cooler</td><td class="r num">97</td></tr></tbody></table></div>
+              <div class="panel"><h5>Agrabad <small>top 5 by quantity</small></h5><table class="mini"><tbody><tr><td>Masala chai</td><td class="r num">190</td></tr><tr><td>Chicken club sandwich</td><td class="r num">118</td></tr><tr><td>Bottled water</td><td class="r num">104</td></tr><tr><td>Iced americano</td><td class="r num">76</td></tr><tr><td>Chocolate brownie</td><td class="r num">58</td></tr></tbody></table></div>
+            </div>
+            <span class="example">All numbers are example data.</span>
+          </div>
+        </div>
+      </div>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Widget</th><th>Shows</th><th>Source</th><th>Click goes to</th></tr></thead>
+          <tbody>
+            <tr><td>Date range</td><td>Today, 7 days, 30 days, Custom; kept in the URL; every widget follows it</td><td>-</td><td>-</td></tr>
+            <tr><td>Revenue, Sales</td><td>Sums over outlets for the range</td><td><code>GET /reports/revenue-by-outlet?from&amp;to</code></td><td><code>/hq/reports</code></td></tr>
+            <tr><td>Average sale, Outlets with sales</td><td>Worked out on the page from the same response, in integer minor units</td><td>same</td><td>-</td></tr>
+            <tr><td>Revenue by outlet</td><td>One bar per outlet, longest first, with revenue and sale count written out</td><td>same</td><td><code>/hq/outlets/:outletId?tab=sales</code></td></tr>
+            <tr><td>Top 5 per outlet</td><td>One small table per outlet: item and quantity sold</td><td><code>GET /reports/top-items?from&amp;to</code>, without <code>outletId</code> for every outlet</td><td><code>/hq/reports?outletId=</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="note"><b>Charts are plain bars</b> <span class="prop">proposed</span>: HTML and CSS, no chart library. Every bar has its number written beside it, so colour never carries meaning alone. The page may refetch every 60 seconds while it is visible <span class="prop">proposed</span>.</div>
+    </section>
+
+    <section id="pages">
+      <h2>Page specs</h2>
+      <p>One card per page. "Forbidden" describes what someone without the page's key sees if they reach the URL directly; the menus never link them there.</p>
+
+      <div class="area">
+        <h3>Public and system</h3>
+        <article class="spec" id="p-login">
+          <header><h3>Sign in</h3><span class="rt">/login &middot; public</span></header>
+          <dl>
+            <dt>Shows</dt><dd>Product name, email, password with a show toggle, <b>Sign in</b>. Centred card; works on a phone.</dd>
+            <dt>Actions</dt><dd><code>POST /auth/login</code> sets the session cookie; then <code>me</code> refetches and the user goes to <code>next</code> if it starts with their own area (<code>/hq</code> or <code>/outlet</code>), else to their area's home.</dd>
+            <dt>Loading</dt><dd>Button spinner; button disabled while the request runs.</dd>
+            <dt>Error</dt><dd>One message for every failed sign-in: "Email or password is incorrect". 429: "Too many attempts. Wait a minute and try again." Network: "Can't reach the server."</dd>
+            <dt>Other</dt><dd>Someone already signed in is sent to their home. After the session ends mid-shift, the cashier signs in here and returns to the sell screen with the cart intact.</dd>
+          </dl>
+        </article>
+        <article class="spec" id="p-403">
+          <header><h3>No access</h3><span class="rt">/403 &middot; signed in</span></header>
+          <dl>
+            <dt>For</dt><dd>A signed-in user whose role opens no page in their area.</dd>
+            <dt>Shows</dt><dd>"Your role ({role name}) doesn't give access to any page. Ask HQ to change your role." and <b>Sign out</b>.</dd>
+            <dt>Note</dt><dd>A missing key on one page is not this page: that shows the forbidden state inside the shell.</dd>
+          </dl>
+        </article>
+        <article class="spec" id="p-404">
+          <header><h3>Not found</h3><span class="rt">any unknown path</span></header>
+          <dl>
+            <dt>Shows</dt><dd>"This page doesn't exist." and a link to the user's home (or <code>/login</code>).</dd>
+            <dt>Note</dt><dd>A known route whose record is gone (<code>/hq/menu/:menuItemId</code> answering 404) shows a not-found state inside the shell instead.</dd>
+          </dl>
+        </article>
+      </div>
+
+      <div class="area">
+        <h3>HQ console</h3>
+        <article class="spec" id="p-hq">
+          <header><h3>Overview</h3><span class="rt">/hq &middot; reports.read</span></header>
+          <dl>
+            <dt>Shows</dt><dd>See <a href="#overview">HQ overview</a>: range, four number tiles, revenue by outlet, top 5 per outlet.</dd>
+            <dt>Loading</dt><dd>Skeleton tiles, three skeleton bars, three skeleton lists.</dd>
+            <dt>Empty</dt><dd>"No sales between 26 Oct and 25 Nov." with the range buttons; outlets with no sales show a zero bar, not a gap.</dd>
+            <dt>Error</dt><dd>Each panel fails on its own: "Couldn't load revenue" with <b>Try again</b> and the request ID.</dd>
+            <dt>Forbidden</dt><dd>Not shown: <code>/hq</code> sends a user without <code>reports.read</code> to their first menu entry <span class="prop">proposed</span>.</dd>
+          </dl>
+        </article>
+        <article class="spec" id="p-outlets">
+          <header><h3>Outlets</h3><span class="rt">/hq/outlets &middot; outlets.manage, menu.assign or inventory.manage</span></header>
+          <dl>
+            <dt>Shows</dt><dd>Table from <code>GET /outlets</code>: code, name, address, status chip (Active, Inactive), created. Search by code or name and an Active / Inactive / All filter, on the client.</dd>
+            <dt>Actions</dt><dd><b>New outlet</b> (<code>outlets.manage</code>) opens a dialog: code (2 to 10 capital letters and digits <span class="prop">proposed</span>), name, address; <code>POST /outlets</code>; toast "Outlet DHK03 created" and open its page. A 409 puts "This code is already used" under the code field. A row opens the outlet.</dd>
+            <dt>Loading</dt><dd>Five skeleton rows.</dd>
+            <dt>Empty</dt><dd>"No outlets yet. Add the first one to start assigning menu items." with <b>New outlet</b> when allowed.</dd>
+            <dt>Error</dt><dd>Error state with <b>Try again</b>.</dd>
+            <dt>Forbidden</dt><dd>Only an HQ user with no permissions could reach it; they land on <code>/403</code>.</dd>
+          </dl>
+        </article>
+        <article class="spec" id="p-outlet">
+          <header><h3>Outlet detail</h3><span class="rt">/hq/outlets/:outletId &middot; outlets.manage, menu.assign or inventory.manage; tabs by key</span></header>
+          <dl>
+            <dt>Shows</dt><dd>Header from <code>GET /outlets/:outletId</code>: name, code, status, address. Tabs: <b>Menu and prices</b> (<code>menu.assign</code>), <b>Stock</b> (<code>inventory.manage</code>), <b>Sales</b> (<code>sales.read</code>). Tab kept in <code>?tab=</code>; the default is the first tab the user may see. See <a href="#outlet-detail">the mock</a>.</dd>
+            <dt>Actions</dt><dd><b>Edit outlet</b> (<code>outlets.manage</code>): name, address, Active switch via <code>PATCH /outlets/:outletId</code>; the code cannot change after creation <span class="prop">proposed</span>. Turning Active off asks for confirmation. Tab actions as described under the mock.</dd>
+            <dt>Loading</dt><dd>Header skeleton, then the tab's own skeleton rows.</dd>
+            <dt>Empty</dt><dd>Menu tab: "Nothing is assigned to Gulshan yet." with <b>Assign item</b>. Stock tab: "Assign items to track their stock." Sales tab: "No sales at Gulshan yet."</dd>
+            <dt>Error</dt><dd>Header failure: page error state. Tab failure: error inside the tab, header stays.</dd>
+            <dt>Not found</dt><dd>"This outlet doesn't exist." with a link to Outlets.</dd>
+            <dt>Forbidden</dt><dd>A user with no tab key sees the header only and "Your role doesn't include any of this outlet's tabs."</dd>
+          </dl>
+        </article>
+        <article class="spec" id="p-menu">
+          <header><h3>Master menu</h3><span class="rt">/hq/menu &middot; menu.manage</span></header>
+          <dl>
+            <dt>Shows</dt><dd>Table from <code>GET /menu-items</code>: SKU, name, category, base price, status (Active, Inactive). Search by name or SKU, category filter, status filter, all on the client.</dd>
+            <dt>Actions</dt><dd><b>New item</b> goes to <code>/hq/menu/new</code>; a row opens <code>/hq/menu/:menuItemId</code>.</dd>
+            <dt>Loading</dt><dd>Eight skeleton rows.</dd>
+            <dt>Empty</dt><dd>"No menu items yet. Add the first item, then assign it to outlets." with <b>New item</b>. A filter with no match: "No items match" with <b>Clear filters</b>.</dd>
+            <dt>Error</dt><dd>Error state with <b>Try again</b>.</dd>
+            <dt>Forbidden</dt><dd>Forbidden state inside the shell.</dd>
+          </dl>
+        </article>
+        <article class="spec" id="p-menu-new">
+          <header><h3>New menu item</h3><span class="rt">/hq/menu/new &middot; menu.manage</span></header>
+          <dl>
+            <dt>Form</dt><dd>SKU (required, unique), name (required), description, category (pick an existing one or type a new one), base price (money input in taka, converted to minor units), Active (on).</dd>
+            <dt>Actions</dt><dd><b>Create item</b>: <code>POST /menu-items</code>; toast "Cappuccino created"; open the item page. <b>Cancel</b> returns to the list, asking first if anything was typed.</dd>
+            <dt>Errors</dt><dd>400 field errors under their inputs; 409 shows "This SKU is already used" under SKU.</dd>
+          </dl>
+        </article>
+        <article class="spec" id="p-menu-item">
+          <header><h3>Edit menu item</h3><span class="rt">/hq/menu/:menuItemId &middot; menu.manage</span></header>
+          <dl>
+            <dt>Shows</dt><dd>The same form, filled from <code>GET /menu-items/:menuItemId</code>. Hint under base price: "Outlets with their own price keep it."</dd>
+            <dt>Actions</dt><dd><b>Save changes</b>: <code>PATCH /menu-items/:menuItemId</code> with only the changed fields; toast "Saved". Turning Active off asks: "Deactivate Cappuccino? Outlets stop selling it until it is active again." There is no delete: sales keep a frozen copy, and inactive is the way to retire an item.</dd>
+            <dt>Loading</dt><dd>Form skeleton.</dd>
+            <dt>Error</dt><dd>Load failure: error state. Save failure: field errors or a toast; the form keeps what was typed.</dd>
+            <dt>Not found</dt><dd>"This item doesn't exist." with a link to the menu.</dd>
+          </dl>
+        </article>
+        <article class="spec" id="p-hq-reports">
+          <header><h3>Reports</h3><span class="rt">/hq/reports &middot; reports.read</span></header>
+          <dl>
+            <dt>Shows</dt><dd>Range picker (Today, Yesterday, 7 days, 30 days, Custom) and an outlet filter (All outlets or one). <b>Revenue by outlet</b> table: outlet, sales, revenue, average sale, share of revenue as a bar, with a total row. <b>Top 5 items</b>: for the chosen outlet, or one table per outlet: rank, item, quantity sold.</dd>
+            <dt>Data</dt><dd><code>GET /reports/revenue-by-outlet?from&amp;to</code>, <code>GET /reports/top-items?outletId&amp;from&amp;to</code>.</dd>
+            <dt>Loading</dt><dd>Skeleton table rows.</dd>
+            <dt>Empty</dt><dd>"No sales in this range."</dd>
+            <dt>Error</dt><dd>Per-table error with <b>Try again</b>.</dd>
+            <dt>Forbidden</dt><dd>Forbidden state inside the shell.</dd>
+          </dl>
+        </article>
+        <article class="spec" id="p-users">
+          <header><h3>Users</h3><span class="rt">/hq/users &middot; users.manage</span></header>
+          <dl>
+            <dt>Shows</dt><dd>Table from <code>GET /users</code>: name, email, works at (HQ, or the outlet code and name), role, status chip (Active, Disabled), last sign-in. Filters: outlet (including "HQ") and role, kept in the URL and sent to the API.</dd>
+            <dt>Actions</dt><dd><b>New user</b> opens a dialog: name, email, works at (HQ or an outlet), role (only roles of the matching scope: HQ roles for HQ, outlet roles for an outlet), initial password; <code>POST /users</code>. 409 shows "This email is already used" under email. A row opens the user.</dd>
+            <dt>Loading</dt><dd>Skeleton rows.</dd>
+            <dt>Empty</dt><dd>With filters: "No users match" and <b>Clear filters</b>. (There is always at least the signed-in HQ admin.)</dd>
+            <dt>Error</dt><dd>Error state with <b>Try again</b>.</dd>
+            <dt>Forbidden</dt><dd>Forbidden state inside the shell.</dd>
+          </dl>
+        </article>
+        <article class="spec" id="p-user">
+          <header><h3>User detail</h3><span class="rt">/hq/users/:userId &middot; users.manage</span></header>
+          <dl>
+            <dt>Shows</dt><dd>Form from <code>GET /users/:userId</code>: name, email (read-only <span class="prop">proposed</span>), works at, role, status. Facts: created, last sign-in.</dd>
+            <dt>Actions</dt><dd><b>Save changes</b>: <code>PATCH /users/:userId</code>. Changing "works at" between HQ and an outlet clears the role, because the role's scope must match. <b>Disable user</b> asks first: "Ayesha won't be able to sign in." <b>Reset password</b> opens a dialog for a new password, sent through the same <code>PATCH</code>. A user cannot disable themselves or change their own role <span class="prop">proposed</span>; those controls are hidden on their own record.</dd>
+            <dt>Hint</dt><dd>"Role and outlet changes apply at this user's next sign-in." (Permissions travel in the session token.)</dd>
+            <dt>States</dt><dd>Form skeleton; error state; not found: "This user doesn't exist."</dd>
+          </dl>
+        </article>
+        <article class="spec" id="p-roles">
+          <header><h3>Roles</h3><span class="rt">/hq/roles &middot; roles.manage</span></header>
+          <dl>
+            <dt>Shows</dt><dd>Table from <code>GET /roles</code>: name, scope chip (HQ, Outlet), number of permissions, description, a lock chip "System" on built-in roles.</dd>
+            <dt>Actions</dt><dd><b>New role</b> goes to <code>/hq/roles/new</code>; a row opens the role.</dd>
+            <dt>States</dt><dd>Skeleton rows; error with <b>Try again</b>; never empty (HQ Admin always exists); forbidden state inside the shell.</dd>
+          </dl>
+        </article>
+        <article class="spec" id="p-role-new">
+          <header><h3>New role</h3><span class="rt">/hq/roles/new &middot; roles.manage</span></header>
+          <dl>
+            <dt>Form</dt><dd>Name (unique), description, scope (HQ or Outlet, chosen first), then permissions from <code>GET /permissions</code> as checkboxes grouped by area (Outlets, Menu, Inventory, Sales, Reports, Users, Roles), each with its description. Only keys of the chosen scope and scope <code>any</code> are listed; switching scope clears the ticks.</dd>
+            <dt>Actions</dt><dd><b>Create role</b>: <code>POST /roles</code>; toast; open the role. 409 shows "A role with this name exists" under name.</dd>
+            <dt>States</dt><dd>Permission list skeleton while the catalog loads; load error with <b>Try again</b>.</dd>
+          </dl>
+        </article>
+        <article class="spec" id="p-role">
+          <header><h3>Edit role</h3><span class="rt">/hq/roles/:roleId &middot; roles.manage</span></header>
+          <dl>
+            <dt>Shows</dt><dd>The role form from <code>GET /roles/:roleId</code>. Scope is shown but fixed after creation <span class="prop">proposed</span>. A system role shows every field read-only with "Built-in role. It can't be changed or deleted, so HQ can never lock itself out."</dd>
+            <dt>Actions</dt><dd><b>Save changes</b>: <code>PUT /roles/:roleId</code>. <b>Delete role</b> asks first; <code>DELETE /roles/:roleId</code>. A 409 (role in use) reads "Some users still have this role. Give them another role first." with a link to <code>/hq/users?roleId=</code>.</dd>
+            <dt>Hint</dt><dd>"Changes apply when each user next signs in."</dd>
+            <dt>States</dt><dd>Form skeleton; error state; not found: "This role doesn't exist."</dd>
+          </dl>
+        </article>
+      </div>
+
+      <div class="area">
+        <h3>Outlet app</h3>
+        <article class="spec" id="p-sell">
+          <header><h3>Sell</h3><span class="rt">/outlet &middot; sales.create</span></header>
+          <dl>
+            <dt>Shows</dt><dd>See <a href="#sell">Sell screen</a>. Search, category chips (from the items' categories, "All" first), tiles with name, effective price and stock left; cart with steppers, line totals, total, <b>Charge</b>.</dd>
+            <dt>Data</dt><dd><code>GET /outlets/:outletId/menu</code> (needs <code>menu.read</code>, which every seeded outlet role holds); only active, available items appear; <code>POST /outlets/:outletId/sales</code> with <code>{ items: [{ menuItemId, quantity }] }</code> and an <code>Idempotency-Key</code>.</dd>
+            <dt>Actions</dt><dd>Tap a tile: add one (or one more). Steppers change quantity; at 0 the line goes. <b>Clear</b> empties the cart after a confirmation when it holds more than one line. <b>Charge</b>, then the receipt with <b>Print</b> and <b>New sale</b>. A <b>Refresh</b> item in the page menu refetches the menu.</dd>
+            <dt>Loading</dt><dd>Twelve skeleton tiles; the cart is usable as soon as tiles appear.</dd>
+            <dt>Empty</dt><dd>"No items to sell yet. HQ assigns the menu for this outlet." No Charge button.</dd>
+            <dt>Error</dt><dd>Menu load failure: "Couldn't load the menu" with <b>Try again</b>; the cart is kept. Sale outcomes: see the three states above.</dd>
+            <dt>Forbidden</dt><dd>Not shown: a user without <code>sales.create</code> is sent from <code>/outlet</code> to their first entry <span class="prop">proposed</span>.</dd>
+          </dl>
+        </article>
+        <article class="spec" id="p-sales">
+          <header><h3>Sales</h3><span class="rt">/outlet/sales &middot; sales.read</span></header>
+          <dl>
+            <dt>Shows</dt><dd>From <code>GET /outlets/:outletId/sales</code>, newest first: receipt number, time ("4:15 pm" today, date otherwise), items, total. Day headers ("Today", "Yesterday", "23 Nov") between groups. <b>Load more</b> uses the API's cursor.</dd>
+            <dt>Actions</dt><dd>A row opens the sale.</dd>
+            <dt>Loading</dt><dd>Skeleton rows; "Load more" shows a spinner in the button.</dd>
+            <dt>Empty</dt><dd>"No sales yet. Sales appear here as soon as they're charged." with a link to Sell for users who may sell.</dd>
+            <dt>Error</dt><dd>Error state with <b>Try again</b>; a failed "Load more" keeps the rows already shown.</dd>
+            <dt>Forbidden</dt><dd>Forbidden state inside the shell.</dd>
+          </dl>
+        </article>
+        <article class="spec" id="p-sale">
+          <header><h3>Sale detail</h3><span class="rt">/outlet/sales/:saleId &middot; sales.read</span></header>
+          <dl>
+            <dt>Shows</dt><dd>The receipt view used after charging, from <code>GET /outlets/:outletId/sales/:saleId</code>: receipt number, time, who sold it, lines with frozen names and prices, total.</dd>
+            <dt>Actions</dt><dd><b>Print</b> (the browser's print dialog, 80 mm receipt layout <span class="prop">proposed</span>); <b>Back to sales</b>.</dd>
+            <dt>States</dt><dd>Receipt skeleton; error with <b>Try again</b>; not found: "This sale doesn't exist at this outlet."</dd>
+          </dl>
+        </article>
+        <article class="spec" id="p-stock">
+          <header><h3>Stock</h3><span class="rt">/outlet/stock &middot; inventory.read</span></header>
+          <dl>
+            <dt>Shows</dt><dd>From <code>GET /outlets/:outletId/inventory</code>: item, SKU, category, quantity (chip at 5 or fewer, red at 0), last change. Search and a "Low stock only" toggle.</dd>
+            <dt>Actions</dt><dd>With <code>inventory.adjust</code>: <b>Restock</b> and <b>Adjust</b> on each row, the same dialogs as the HQ stock tab, posting to <code>.../inventory/:menuItemId/movements</code>. After saving, the row updates and a toast says "Cappuccino: 28 &rarr; 52".</dd>
+            <dt>Loading</dt><dd>Skeleton rows.</dd>
+            <dt>Empty</dt><dd>"No items assigned yet, so there is no stock to track."</dd>
+            <dt>Error</dt><dd>Error state; a refused movement (one that would take stock below zero) shows the API's message inside the dialog.</dd>
+            <dt>Forbidden</dt><dd>Forbidden state inside the shell.</dd>
+          </dl>
+        </article>
+        <article class="spec" id="p-outlet-reports">
+          <header><h3>Reports</h3><span class="rt">/outlet/reports &middot; reports.read</span></header>
+          <dl>
+            <dt>Shows</dt><dd>Range picker; tiles for revenue, sales and average sale for this outlet; top 5 items by quantity. The API returns only this outlet's figures for an outlet user.</dd>
+            <dt>Data</dt><dd><code>GET /reports/revenue-by-outlet?from&amp;to</code>, <code>GET /reports/top-items?outletId&amp;from&amp;to</code> with the user's own outlet.</dd>
+            <dt>States</dt><dd>Skeleton tiles and list; "No sales in this range."; error per panel with <b>Try again</b>; forbidden state inside the shell.</dd>
+          </dl>
+        </article>
+      </div>
+    </section>
+
+    <section id="patterns">
+      <h2>Shared patterns</h2>
+      <p>Built once in <code>components/</code> and reused by every page.</p>
+      <div class="grid2">
+        <div class="card"><h3>Tables</h3><ul class="tight"><li>Title, count and the primary button in the page header</li><li>Search and filters above; filters that matter live in the URL</li><li>Money and counts right-aligned with tabular figures</li><li>A whole row opens the record; a "&middot;&middot;&middot;" menu holds row actions</li><li>Sticky header; under 640 px rows become stacked cards</li><li>Growing lists (sales) use "Load more" with the API cursor; master lists load whole</li></ul></div>
+        <div class="card"><h3>Forms</h3><ul class="tight"><li>Label above input, hint below, error below the hint in red</li><li>Required fields marked; optional ones say "optional"</li><li>Money inputs show the ৳ prefix and accept "1250" or "1,250.50"</li><li>Server field errors land under their inputs</li><li>Primary action bottom right: "Create item", "Save changes"; disabled with a spinner while saving</li><li>Leaving with unsaved changes asks first <span class="prop">proposed</span></li></ul></div>
+        <div class="card"><h3>Dialogs</h3><ul class="tight"><li>Short tasks only: new outlet, new user, assign item, restock, change price</li><li>Title is the task; the primary button names the result</li><li>Escape and the close button cancel; focus returns to the opener</li><li>Errors show inside the dialog, which stays open</li><li>On phones, dialogs become bottom sheets</li></ul></div>
+        <div class="card"><h3>Confirmations</h3><ul class="tight"><li>For deactivate, disable, unassign, delete, discard cart</li><li>Title asks the exact question: "Unassign Cappuccino from Gulshan?"</li><li>Body states the consequence in one sentence</li><li>The confirming button repeats the verb ("Unassign"), red when destructive; Cancel has focus</li></ul></div>
+        <div class="card"><h3>Toasts</h3><ul class="tight"><li>After every successful write: "Saved", "Outlet DHK03 created"</li><li>For failures not tied to a field, with the API's title</li><li>Never for field errors (they are on the form) and never for the sale result (the receipt is the answer)</li><li>Bottom right on laptops, top centre on tablets, so the cart and Charge stay clear</li></ul></div>
+        <div class="card"><h3>States</h3><ul class="tight"><li>Loading: skeletons in the page's real shape, after 150 ms <span class="prop">proposed</span></li><li>Empty: what goes here, and the button that adds it if allowed</li><li>Error: what failed, <b>Try again</b>, request ID in small type</li><li>Forbidden: in the shell, never a sign-out</li><li>Status chips: green done or active, amber low or waiting, red sold out or failed, grey inactive; always text plus colour</li></ul></div>
+      </div>
+    </section>
+
+    <section id="system">
+      <h2>Design system</h2>
+      <p>One visual theme with light and dark mode, written as CSS variables under shadcn's token names, so every shadcn component picks it up with no per-component styling. This page is drawn with the same tokens, so switching your system to dark mode shows the dark values.</p>
+      <div class="note"><b>The idea.</b> A work tool used all day: quiet neutrals, one ink-blue primary for what you can act on, and status colours kept for stock and outcomes. Blue never means a status, so "low stock" amber and "sold out" red are never confused with a button.</div>
+
+      <h3>Colour tokens</h3>
+      <div class="swatches">
+        <div class="sw"><div class="c" style="background:var(--primary)"></div><div class="t"><b>Primary</b><span>--primary</span></div></div>
+        <div class="sw"><div class="c" style="background:var(--accent)"></div><div class="t"><b>Accent (soft primary)</b><span>--accent</span></div></div>
+        <div class="sw"><div class="c" style="background:var(--foreground)"></div><div class="t"><b>Text</b><span>--foreground</span></div></div>
+        <div class="sw"><div class="c" style="background:var(--muted-foreground)"></div><div class="t"><b>Muted text</b><span>--muted-foreground</span></div></div>
+        <div class="sw"><div class="c" style="background:var(--background)"></div><div class="t"><b>Page</b><span>--background</span></div></div>
+        <div class="sw"><div class="c" style="background:var(--card)"></div><div class="t"><b>Card, popover</b><span>--card</span></div></div>
+        <div class="sw"><div class="c" style="background:var(--muted)"></div><div class="t"><b>Muted, secondary</b><span>--muted</span></div></div>
+        <div class="sw"><div class="c" style="background:var(--border)"></div><div class="t"><b>Border, input</b><span>--border</span></div></div>
+        <div class="sw"><div class="c" style="background:var(--success)"></div><div class="t"><b>Success</b><span>--success (added)</span></div></div>
+        <div class="sw"><div class="c" style="background:var(--warning)"></div><div class="t"><b>Warning, low stock</b><span>--warning (added)</span></div></div>
+        <div class="sw"><div class="c" style="background:var(--destructive)"></div><div class="t"><b>Destructive, sold out</b><span>--destructive</span></div></div>
+        <div class="sw"><div class="c" style="background:linear-gradient(90deg,var(--cat-1) 0 20%,var(--cat-2) 20% 40%,var(--cat-3) 40% 60%,var(--cat-4) 60% 80%,var(--cat-5) 80%)"></div><div class="t"><b>Category 1 to 5</b><span>--category-1..5 (added)</span></div></div>
+      </div>
+
+      <div class="scroll">
+        <table>
+          <thead><tr><th>shadcn token</th><th>Light</th><th>Dark</th><th>Used for</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">--background / --foreground</td><td class="mono">0.985 0.003 250 / 0.2 0.015 255</td><td class="mono">0.17 0.01 255 / 0.95 0.005 255</td><td>page and text</td></tr>
+            <tr><td class="mono">--card, --popover</td><td class="mono">1 0 0</td><td class="mono">0.21 0.012 255</td><td>panels, tables, dialogs, the cart</td></tr>
+            <tr><td class="mono">--primary / -foreground</td><td class="mono">0.48 0.12 255 / 0.99 0 0</td><td class="mono">0.72 0.12 255 / 0.17 0.02 255</td><td>Charge, primary buttons, active nav, focus ring (<code>--ring</code>)</td></tr>
+            <tr><td class="mono">--secondary, --muted</td><td class="mono">0.96 0.005 250</td><td class="mono">0.245 0.012 255</td><td>secondary buttons, table headers, skeletons</td></tr>
+            <tr><td class="mono">--muted-foreground</td><td class="mono">0.5 0.015 255</td><td class="mono">0.7 0.015 255</td><td>hints, captions, unit prices</td></tr>
+            <tr><td class="mono">--accent / -foreground</td><td class="mono">0.95 0.025 255 / 0.38 0.1 255</td><td class="mono">0.3 0.05 255 / 0.86 0.07 255</td><td>hover, selected rows, info chips</td></tr>
+            <tr><td class="mono">--border, --input</td><td class="mono">0.91 0.007 250</td><td class="mono">0.31 0.014 255</td><td>lines and input borders</td></tr>
+            <tr><td class="mono">--destructive</td><td class="mono">0.55 0.19 27</td><td class="mono">0.7 0.16 27</td><td>delete, sold out, failed</td></tr>
+            <tr><td class="mono">--success, --warning <span class="prop">proposed</span></td><td class="mono">0.52 0.12 155, 0.58 0.13 70</td><td class="mono">0.76 0.13 155, 0.8 0.12 80</td><td>sale complete, active; low stock, unknown outcome</td></tr>
+            <tr><td class="mono">--category-1..5 <span class="prop">proposed</span></td><td colspan="2">five muted hues, assigned to categories in alphabetical order, repeating</td><td>the stripe on item tiles only</td></tr>
+            <tr><td class="mono">--radius</td><td colspan="2" class="mono">0.625rem (10 px)</td><td>cards, inputs, tiles</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="example">Values are OKLCH (lightness, chroma, hue). Text on every surface meets WCAG AA contrast in both modes.</p>
+
+      <h3>The theme file</h3>
+      <div class="scroll"><pre class="code">/* src/index.css - the only place colours are written */
+@import "tailwindcss";
+@custom-variant dark (&amp;:where(.dark, .dark *));
+
+:root {
+  --background: oklch(0.985 0.003 250);
+  --foreground: oklch(0.2 0.015 255);
+  --primary: oklch(0.48 0.12 255);
+  --primary-foreground: oklch(0.99 0 0);
+  --success: oklch(0.52 0.12 155);
+  --warning: oklch(0.58 0.13 70);
+  /* ...every token in the table above */
+  --radius: 0.625rem;
+}
+.dark {
+  --background: oklch(0.17 0.01 255);
+  --primary: oklch(0.72 0.12 255);
+  /* ...the same names with dark values */
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-primary: var(--primary);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  /* ...one line per token, so bg-primary, text-success and so on exist */
+}</pre></div>
+      <ul class="tight">
+        <li><b>Mode:</b> Light, Dark or System, chosen in the account menu and kept in the browser. A few lines in <code>index.html</code> set the <code>dark</code> class on <code>&lt;html&gt;</code> before React draws, so there is no flash of the wrong mode.</li>
+        <li><b>Rule:</b> no colour value inside a component; only token classes (<code>bg-primary</code>, <code>text-muted-foreground</code>). Review checks it.</li>
+      </ul>
+
+      <div class="grid2">
+        <div class="card">
+          <h3>Type</h3>
+          <p>The system font stack, no web font <span class="prop">proposed</span>: nothing to download, and it is the font each device renders best. A monospace stack for SKUs and receipt numbers. Tabular figures for every number in a table, tile or total.</p>
+          <div class="type-scale">
+            <div><span class="k">page title 24 / 600</span><span style="font-size:24px;font-weight:600">Outlets</span></div>
+            <div><span class="k">section 18 / 600</span><span style="font-size:18px;font-weight:600">Revenue by outlet</span></div>
+            <div><span class="k">body 14 / 400 (HQ)</span><span style="font-size:14px">Outlets with their own price keep it.</span></div>
+            <div><span class="k">body 16 / 400 (outlet)</span><span style="font-size:16px">Chicken club sandwich</span></div>
+            <div><span class="k">small 12.5 / 400</span><span style="font-size:12.5px;color:var(--muted-foreground)">Last sign-in 25 Nov, 9:02 am</span></div>
+            <div><span class="k">total 28 / 700</span><span style="font-size:28px;font-weight:700" class="num">৳1,240.00</span></div>
+            <div><span class="k">mono 13</span><span class="mono" style="font-size:13px">DHK01-000124 &middot; COF-CAP</span></div>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Spacing</h3>
+          <p>A 4 px scale, using Tailwind's steps. Pages use 16 px gutters on phones and 24 px from tablet up; cards pad 16 to 20 px.</p>
+          <div class="space">
+            <div><span class="mono">1 &middot; 4 px</span><i style="width:4px"></i></div>
+            <div><span class="mono">2 &middot; 8 px</span><i style="width:8px"></i></div>
+            <div><span class="mono">3 &middot; 12 px</span><i style="width:12px"></i></div>
+            <div><span class="mono">4 &middot; 16 px</span><i style="width:16px"></i></div>
+            <div><span class="mono">6 &middot; 24 px</span><i style="width:24px"></i></div>
+            <div><span class="mono">8 &middot; 32 px</span><i style="width:32px"></i></div>
+            <div><span class="mono">12 &middot; 48 px</span><i style="width:48px"></i></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Touch targets <span class="prop">proposed</span></h3>
+        <p>The outlet app is used with fingers, fast, all day. HQ controls are 36 to 40 px on a laptop and grow to 44 px on touch screens (<code>pointer: coarse</code>).</p>
+        <div class="targets">
+          <div><b style="width:44px;height:44px">44</b>any control, outlet app</div>
+          <div><b style="width:88px;height:44px">44 &times; 44</b>stepper buttons</div>
+          <div><b style="width:132px;height:96px">132 &times; 96 min</b>item tile</div>
+          <div><b style="width:200px;height:60px">full width &times; 60</b>Charge</div>
+          <div><b style="width:96px;height:44px">44 tall</b>category chip</div>
+        </div>
+        <p>At least 8 px between neighbouring targets. <code>touch-action: manipulation</code> removes the double-tap zoom delay. Nothing depends on hover.</p>
+      </div>
+
+      <h3>Components</h3>
+      <div class="grid2">
+        <div class="demo">
+          <h4>Buttons</h4>
+          <div class="demo-row"><span class="btn primary">Save changes</span><span class="btn secondary">Cancel</span><span class="btn">Restock</span><span class="btn ghost">Clear</span></div>
+          <div class="demo-row"><span class="btn danger">Unassign</span><span class="btn primary off"><span class="spin"></span>Saving</span><span class="btn sm">Load more</span></div>
+        </div>
+        <div class="demo">
+          <h4>Inputs</h4>
+          <div class="field"><label>Base price</label><div class="inp focus"><span class="pre">৳</span><span>250.00</span></div><span class="hint">Outlets with their own price keep it.</span></div>
+          <div class="field"><label>SKU</label><div class="inp bad"><span>COF-CAP</span></div><span class="err">This SKU is already used</span></div>
+        </div>
+        <div class="demo">
+          <h4>Chips and switch</h4>
+          <div class="demo-row"><span class="chip good">Active</span><span class="chip grey">Inactive</span><span class="chip warn">4 left</span><span class="chip bad">Sold out</span><span class="chip info">own price</span><span class="chip grey mono">DHK01</span></div>
+          <div class="demo-row" style="font-size:13.5px"><span class="sw-mini on"></span> Available <span class="sw-mini"></span> Unavailable</div>
+        </div>
+        <div class="demo">
+          <h4>Toasts</h4>
+          <div class="toast"><i style="background:var(--success)"></i><span>Outlet DHK03 created</span></div>
+          <div class="toast"><i style="background:var(--destructive)"></i><span>Not enough stock for Iced americano. <span style="color:var(--muted-foreground)">The cart shows what is left.</span></span></div>
+        </div>
+        <div class="demo">
+          <h4>Confirmation</h4>
+          <div class="dialog">
+            <h3>Unassign Cappuccino from Gulshan?</h3>
+            <p>Gulshan stops selling it. An item with sales or stock here can only be marked unavailable.</p>
+            <div class="demo-row"><span class="btn">Cancel</span><span class="btn danger">Unassign</span></div>
+          </div>
+        </div>
+        <div class="demo">
+          <h4>Empty and loading</h4>
+          <div class="empty"><b>No sales yet</b><p>Sales appear here as soon as they're charged.</p><span class="btn sm">Open Sell</span></div>
+          <div style="display:grid;gap:8px"><div class="skel" style="width:70%"></div><div class="skel" style="width:90%"></div><div class="skel" style="width:55%"></div></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="decisions">
+      <h2>Open decisions</h2>
+      <p>Each is settled at the spec gate of the feature that needs it. The first option listed is the recommendation.</p>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>#</th><th>Question</th><th>Options</th><th>Needed by</th></tr></thead>
+          <tbody>
+            <tr><td>1</td><td>Confirm the company currency <span class="prop">proposed</span></td><td>One currency for the company, configured once as <code>CURRENCY</code> in <code>lib/money.ts</code> (default <code>BDT</code>, shown as <code>৳1,240.00</code> with two decimals); no currency column</td><td>first page that shows money</td></tr>
+            <tr><td>2</td><td>Who may list outlets and roles on the user form?</td><td><code>GET /outlets</code> and <code>GET /roles</code> also accept <code>users.manage</code>, so "works at", role and the filters fill for a users-only role; or the users pages also require the reader keys of those lists</td><td>users, user detail</td></tr>
+            <tr><td>3</td><td>How long does a cashier stay signed in?</td><td>A longer token lifetime for outlet roles; a refresh token; or one hour, with the cart surviving a sign-in</td><td>sell screen</td></tr>
+            <tr><td>4</td><td>Should stock history be visible?</td><td>Add <code>GET .../inventory/:menuItemId/movements</code> and a history sheet; or current quantities only</td><td>stock pages</td></tr>
+            <tr><td>5</td><td>How do people find an old sale?</td><td>Add receipt-number search and a date filter to the sales list API; or scroll with "Load more"</td><td>sales list</td></tr>
+            <tr><td>6</td><td>Show change due?</td><td>A "cash received" field on the receipt step, shown only, not stored; or none</td><td>sell screen</td></tr>
+            <tr><td>7</td><td>Receipt printing?</td><td>Browser print with an 80 mm layout; or no print in this build</td><td>sale detail</td></tr>
+            <tr><td>8</td><td>What does an inactive outlet stop?</td><td>Its users can still sign in but cannot sell; or they cannot sign in. The outlets spec decides; the UI then explains it in the confirmation</td><td>outlet edit</td></tr>
+            <tr><td>9</td><td>Low-stock threshold?</td><td>5 for every item; or a per-item threshold (needs a column)</td><td>stock pages</td></tr>
+            <tr><td>10</td><td>Report export?</td><td>CSV download of the reports tables; or none in this build</td><td>reports</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+</div>
+
+</body>
+</html>

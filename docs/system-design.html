@@ -1,0 +1,881 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>POS System Design</title>
+<meta name="description" content="One-page overview of POS System, a multi-outlet food-and-beverage point of sale: how the pieces connect, why each was chosen, and how a request travels through it.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root {
+  --bg: #F5F7F9;
+  --surface: #FFFFFF;
+  --fg: #151A21;
+  --muted: #5A6472;
+  --line: #D6DCE3;
+  --accent: #0B6A87;
+  --accent-soft: #E3F1F5;
+  --zone: #A8590B;
+  --zone-soft: #FBF1E6;
+  --lane-browser: #0B6A87;
+  --lane-edge: #A8590B;
+  --lane-http: #6A4FB6;
+  --lane-service: #2D7A4B;
+  --lane-db: #A23E67;
+  --prop: #8A5A00;
+  --prop-soft: #FFF4D6;
+  --font-display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0E1216; --surface: #161B21; --fg: #E5E9EE; --muted: #9AA4B1; --line: #2B323B;
+    --accent: #5BB8D4; --accent-soft: #15303A; --zone: #E9A25A; --zone-soft: #2A2116;
+    --lane-browser: #5BB8D4; --lane-edge: #E9A25A; --lane-http: #B4A0F0; --lane-service: #6CCB91; --lane-db: #EE8DB4;
+    --prop: #F2C661; --prop-soft: #2E2612;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0E1216; --surface: #161B21; --fg: #E5E9EE; --muted: #9AA4B1; --line: #2B323B;
+  --accent: #5BB8D4; --accent-soft: #15303A; --zone: #E9A25A; --zone-soft: #2A2116;
+  --lane-browser: #5BB8D4; --lane-edge: #E9A25A; --lane-http: #B4A0F0; --lane-service: #6CCB91; --lane-db: #EE8DB4;
+  --prop: #F2C661; --prop-soft: #2E2612;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.6;
+  overflow-wrap: break-word;
+}
+.wrap {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 48px 72px;
+  display: flex;
+  flex-direction: column;
+  gap: 64px;
+}
+section, header { min-width: 0; }
+.col { max-width: 760px; min-width: 0; }
+
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; margin: 0; line-height: 1.15; }
+h1 { font-size: clamp(2rem, 6vw, 2.9rem); font-weight: 600; letter-spacing: -0.01em; }
+h2 { font-size: 1.6rem; font-weight: 600; margin-bottom: 12px; }
+h3 { font-size: 1.15rem; font-weight: 600; }
+p { margin: 0; }
+a { color: var(--accent); }
+.eyebrow {
+  font-family: var(--font-mono); font-size: 0.78rem; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--accent); margin-bottom: 12px;
+}
+.lede { font-size: 1.1rem; color: var(--muted); margin-top: 16px; max-width: 68ch; }
+.intro { color: var(--muted); max-width: 68ch; margin-bottom: 20px; }
+code, .mono { font-family: var(--font-mono); font-size: 0.88em; }
+code { background: var(--accent-soft); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+.muted { color: var(--muted); }
+.prop {
+  display: inline-block; font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.03em;
+  color: var(--prop); background: var(--prop-soft); border: 1px solid var(--prop);
+  border-radius: 999px; padding: 0 7px; line-height: 1.5; vertical-align: 1px; white-space: nowrap;
+}
+
+.status {
+  margin-top: 20px; border: 1px solid var(--zone); background: var(--zone-soft);
+  border-radius: 10px; padding: 12px 16px; font-size: 0.95rem; max-width: 760px;
+}
+.status b { color: var(--zone); }
+
+.toc { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; padding: 0; margin: 24px 0 0; }
+.toc a {
+  display: inline-block; text-decoration: none; color: var(--fg); font-size: 0.88rem;
+  border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 4px 12px;
+}
+.toc a:hover { border-color: var(--accent); color: var(--accent); }
+
+.facts {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+  margin-top: 28px;
+}
+.fact { background: var(--surface); padding: 14px 16px; min-width: 0; }
+.fact b { display: block; font-family: var(--font-display); font-size: 1.35rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.fact span { color: var(--muted); font-size: 0.88rem; }
+
+.does { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-top: 8px; }
+.does div { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; min-width: 0; }
+.does b { display: block; font-family: var(--font-display); font-size: 1.05rem; margin-bottom: 4px; }
+.does p { font-size: 0.93rem; color: var(--muted); }
+
+.card {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+  padding: 20px; min-width: 0;
+}
+.figure { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; align-items: start; }
+@media (min-width: 880px) { .figure { grid-template-columns: minmax(0, 470px) minmax(0, 1fr); gap: 36px; } }
+.figure svg { display: block; width: 100%; height: auto; max-width: 470px; margin: 0 auto; }
+.notes { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 10px; font-size: 0.95rem; }
+.notes li::marker { color: var(--accent); font-weight: 600; }
+.caption { color: var(--muted); font-size: 0.9rem; margin-top: 12px; }
+@media (max-width: 520px) { .card { padding: 14px 10px; } pre { font-size: 0.72rem; padding: 8px 10px; } .flow-card { padding: 16px 14px; } }
+
+/* SVG styling through tokens */
+.n { fill: var(--surface); stroke: var(--line); stroke-width: 1.5; }
+.n-accent { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; }
+.n-dash { fill: var(--surface); stroke: var(--muted); stroke-width: 1.3; stroke-dasharray: 5 4; }
+.n-vol { fill: var(--zone-soft); stroke: var(--zone); stroke-width: 1.5; }
+.zone { fill: var(--zone-soft); fill-opacity: 0.45; stroke: var(--zone); stroke-width: 1.5; stroke-dasharray: 7 5; }
+.chip { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1; }
+.t { fill: var(--fg); font-family: var(--font-body); font-size: 14.5px; font-weight: 600; }
+.tc { fill: var(--fg); font-family: var(--font-body); font-size: 13px; font-weight: 600; }
+.ts { fill: var(--muted); font-family: var(--font-body); font-size: 12.5px; }
+.tm { fill: var(--muted); font-family: var(--font-mono); font-size: 11.5px; }
+.tk { fill: var(--fg); font-family: var(--font-mono); font-size: 11.5px; }
+.tz { fill: var(--zone); font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.06em; }
+.ta { fill: var(--accent); font-family: var(--font-mono); font-size: 11px; font-weight: 500; }
+.edge { fill: none; stroke: var(--muted); stroke-width: 1.5; }
+.edge-dash { fill: none; stroke: var(--muted); stroke-width: 1.3; stroke-dasharray: 5 4; }
+.head { fill: var(--muted); }
+.divider { stroke: var(--line); stroke-width: 1.2; }
+
+/* Inside the app */
+.app-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; }
+@media (min-width: 880px) { .app-grid { grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); } }
+.stack { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.stack li {
+  background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--accent);
+  border-radius: 8px; padding: 10px 14px; min-width: 0; position: relative;
+}
+.stack li + li { margin-top: 22px; }
+.stack li + li::before {
+  content: "\2193"; position: absolute; top: -21px; left: 18px; color: var(--muted); font-size: 0.95rem; line-height: 20px;
+}
+.stack li b { font-family: var(--font-display); font-size: 1.05rem; }
+.stack li .file { font-family: var(--font-mono); font-size: 0.78rem; color: var(--muted); margin-left: 6px; overflow-wrap: anywhere; }
+.stack li p { font-size: 0.9rem; margin-top: 2px; }
+.stack li .never { color: var(--muted); font-size: 0.85rem; }
+.stack li.db { border-left-color: var(--lane-db); }
+.stack li.gen { border-left-color: var(--muted); border-style: dashed; border-left-style: solid; }
+
+.chain { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.chain li { font-family: var(--font-mono); font-size: 0.8rem; background: var(--accent-soft); border: 1px solid var(--accent); border-radius: 6px; padding: 2px 8px; }
+.chain li.sep { background: none; border: none; padding: 0; color: var(--muted); }
+.chain li.per { border-style: dashed; }
+.side { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+.side h3 { margin-bottom: 8px; }
+.side p.small { font-size: 0.9rem; color: var(--muted); margin-top: 8px; }
+
+.modules { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; }
+.mod { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.mod h4 { margin: 0; font-family: var(--font-mono); font-size: 0.92rem; color: var(--accent); }
+.mod p { font-size: 0.88rem; }
+.mod .k { font-family: var(--font-mono); font-size: 0.76rem; color: var(--muted); overflow-wrap: anywhere; }
+
+/* Why cards */
+.why { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 14px; }
+.why article { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.why .pick { font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+.why p { font-size: 0.94rem; }
+.why .alt { border-top: 1px solid var(--line); padding-top: 8px; color: var(--muted); font-size: 0.89rem; margin-top: auto; }
+.why .alt b { color: var(--zone); font-weight: 600; }
+
+/* Request flows */
+.flows { display: flex; flex-direction: column; gap: 22px; }
+.flow-card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; min-width: 0; }
+.flow-card > h3 { margin-bottom: 4px; }
+.flow-card > p.sub { color: var(--muted); font-size: 0.92rem; margin-bottom: 14px; }
+.legend { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 18px; padding: 0; list-style: none; }
+.lane {
+  display: inline-block; font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.04em;
+  border: 1px solid currentColor; border-radius: 6px; padding: 1px 7px; white-space: nowrap; background: var(--surface);
+}
+.lane.browser { color: var(--lane-browser); }
+.lane.edge { color: var(--lane-edge); }
+.lane.http { color: var(--lane-http); }
+.lane.service { color: var(--lane-service); }
+.lane.db { color: var(--lane-db); }
+ol.steps { list-style: none; margin: 0; padding: 0; counter-reset: step; }
+ol.steps > li {
+  counter-increment: step; position: relative; display: grid;
+  grid-template-columns: 30px minmax(0, 1fr); gap: 0 12px; padding-bottom: 16px;
+}
+ol.steps > li::before {
+  content: counter(step); grid-row: 1 / span 3; width: 30px; height: 30px; border-radius: 50%;
+  display: grid; place-items: center; font-family: var(--font-mono); font-size: 0.8rem; font-weight: 500;
+  background: var(--accent-soft); color: var(--accent); border: 1px solid var(--accent); position: relative; z-index: 1;
+}
+ol.steps > li:not(:last-child)::after {
+  content: ""; position: absolute; left: 14.5px; top: 30px; bottom: 0; width: 1.5px; background: var(--line);
+}
+ol.steps > li.key::before { background: var(--accent); color: var(--surface); }
+.step-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-height: 30px; }
+.step-head b { font-size: 0.97rem; }
+ol.steps p { font-size: 0.92rem; margin-top: 2px; }
+ol.steps p.why-step { color: var(--muted); font-size: 0.87rem; }
+pre {
+  background: var(--bg); border: 1px solid var(--line); border-radius: 8px;
+  padding: 10px 12px; font-family: var(--font-mono); font-size: 0.8rem; line-height: 1.5; margin: 8px 0 0;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.outcomes { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-top: 4px; }
+.outcomes div { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; font-size: 0.88rem; min-width: 0; }
+.outcomes b { display: block; font-family: var(--font-mono); font-size: 0.8rem; }
+
+/* Data model */
+.dm { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 18px; }
+.dm-group { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.dm-group h3 { font-family: var(--font-mono); font-size: 0.76rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--zone); font-weight: 500; }
+.tbl { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; min-width: 0; overflow: hidden; }
+.tbl .name { font-family: var(--font-mono); font-size: 0.86rem; font-weight: 500; padding: 6px 12px; background: var(--accent-soft); border-bottom: 1px solid var(--line); color: var(--accent); }
+.tbl ul { list-style: none; margin: 0; padding: 6px 12px 8px; display: flex; flex-direction: column; gap: 2px; }
+.tbl li { font-family: var(--font-mono); font-size: 0.78rem; display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; }
+.tbl li .tag { font-size: 0.68rem; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+.tbl li .fk { color: var(--lane-http); border-color: var(--lane-http); }
+.tbl .note { font-family: var(--font-body); font-size: 0.8rem; color: var(--muted); padding: 0 12px 8px; }
+.rels { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; font-size: 0.93rem; }
+
+/* Cost, growth, open */
+.table-scroll { max-width: 620px; }
+table { border-collapse: collapse; width: 100%; font-size: 0.95rem; }
+th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-family: var(--font-mono); font-size: 0.74rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); font-weight: 500; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+tr.total td { font-weight: 600; border-bottom: none; }
+
+.load { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin: 8px 0 20px; }
+.load div { background: var(--surface); padding: 12px 14px; min-width: 0; }
+.load b { display: block; font-family: var(--font-display); font-size: 1.2rem; font-variant-numeric: tabular-nums; }
+.load span { color: var(--muted); font-size: 0.85rem; }
+ol.grow { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 10px; }
+
+.open { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; list-style: none; padding: 0; margin: 0; }
+.open li { border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 12px 14px; font-size: 0.92rem; min-width: 0; }
+.open li b { display: block; font-size: 0.97rem; margin-bottom: 2px; }
+.open li span { color: var(--muted); }
+footer { color: var(--muted); font-size: 0.88rem; border-top: 1px solid var(--line); padding-top: 16px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">POS System · system design</div>
+    <h1>POS System Design</h1>
+    <p class="lede">A point of sale for one company that runs many food-and-beverage outlets. HQ owns the master menu, sets prices per outlet and watches sales; each outlet sells from its own menu and its own stock. One Express API and one React app run in one container, next to PostgreSQL, on a single EC2 server.</p>
+    <p class="status"><b>Status:</b> target design, 2026-11-25; each feature's spec confirms or changes its part. Nothing is built yet. Anything marked <span class="prop">(proposed)</span> goes beyond the agreed brief and needs a decision.</p>
+    <div class="facts">
+      <div class="fact"><b>~$20-24 / month</b><span>all of AWS, see the cost section</span></div>
+      <div class="fact"><b>1 server</b><span>EC2 running Caddy, the app and Postgres in containers</span></div>
+      <div class="fact"><b>8 modules</b><span>auth, roles, users, outlets, menu, inventory, sales, reports</span></div>
+      <div class="fact"><b>12 tables</b><span>in one Postgres schema, <code>pos</code></span></div>
+    </div>
+    <ul class="toc" aria-label="Sections">
+      <li><a href="#what">What it does</a></li>
+      <li><a href="#connect">How the pieces connect</a></li>
+      <li><a href="#inside">Inside the app</a></li>
+      <li><a href="#why">Why we chose each thing</a></li>
+      <li><a href="#requests">Three requests</a></li>
+      <li><a href="#access">Access control</a></li>
+      <li><a href="#data">Data model</a></li>
+      <li><a href="#cost">Cost</a></li>
+      <li><a href="#grow">How it grows</a></li>
+      <li><a href="#open">Still to decide</a></li>
+    </ul>
+  </header>
+
+  <section id="what">
+    <div class="col">
+      <h2>What the system does</h2>
+      <p class="intro">Single company, many outlets: HQ sets up the menu and the outlets, outlets sell, HQ reads the numbers.</p>
+    </div>
+    <div class="does">
+      <div><b>HQ</b><p>Users with no outlet. They manage outlets, the master menu, users and roles, restock any outlet, and read reports across every outlet in the HQ console at <code>/hq</code>.</p></div>
+      <div><b>Outlets</b><p>Each outlet has a short code such as <code>DHK01</code>, its own staff (managers and cashiers) and its own receipt numbers. Staff work in the outlet app at <code>/outlet</code>.</p></div>
+      <div><b>Menu</b><p>HQ creates master items with a base price, assigns them to outlets, and may override the price per outlet. An outlet sees only its assigned items.</p></div>
+      <div><b>Inventory</b><p>Stock is kept per outlet per item. Sales take it down, restocks and adjustments change it, and every change is logged. Stock never drops below zero.</p></div>
+      <div><b>Sales</b><p>A cashier rings up many items in one sale. One database transaction checks prices, takes stock and gives the next receipt number for that outlet, such as <code>DHK01-000123</code>.</p></div>
+      <div><b>Reports</b><p>Total revenue and sale count per outlet, and the top 5 items by quantity per outlet, for a date range. HQ sees every outlet; outlet staff see only their own.</p></div>
+    </div>
+  </section>
+
+  <section id="connect">
+    <div class="col">
+      <h2>How the pieces connect</h2>
+      <p class="intro">Everything the user touches runs on one server. AWS around it provides the address, the disk, the secrets, the logs and the delivery path.</p>
+    </div>
+    <div class="card">
+      <div class="figure">
+        <svg viewBox="0 0 400 884" role="img" aria-labelledby="arch-title arch-desc">
+          <title id="arch-title">POS System architecture</title>
+          <desc id="arch-desc">The browser looks up the address in Route53 and connects over HTTPS to an Elastic IP on one EC2 server. On the server, Caddy handles HTTPS and forwards to the app container, which serves the API under /api/v1 and the React build, and talks to the Postgres container. Postgres data and Caddy certificates sit on a separate EBS volume. GitHub Actions pushes the image to ECR, the deploy bundle to S3, and runs deploy.sh on the server through SSM.</desc>
+          <defs>
+            <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path class="head" d="M0,0 L10,5 L0,10 z"/>
+            </marker>
+          </defs>
+
+          <rect class="n-accent" x="110" y="8" width="180" height="50" rx="8"/>
+          <text class="t" x="200" y="30" text-anchor="middle">Browser</text>
+          <text class="tm" x="200" y="48" text-anchor="middle">https://pos.&lt;domain&gt;</text>
+
+          <path class="edge-dash" d="M110,33 L68,33 L68,90" marker-end="url(#arr)"/>
+          <text class="ts" x="74" y="76">DNS</text>
+          <path class="edge" d="M200,58 L200,90" marker-end="url(#arr)"/>
+          <text class="ts" x="207" y="80">HTTPS</text>
+
+          <rect class="n" x="8" y="92" width="120" height="48" rx="8"/>
+          <text class="t" x="68" y="113" text-anchor="middle">Route53</text>
+          <text class="ts" x="68" y="131" text-anchor="middle">A record</text>
+
+          <rect class="n" x="140" y="92" width="120" height="48" rx="8"/>
+          <text class="t" x="200" y="113" text-anchor="middle">Elastic IP</text>
+          <text class="ts" x="200" y="131" text-anchor="middle">fixed address</text>
+
+          <rect class="n" x="272" y="92" width="120" height="48" rx="8"/>
+          <text class="t" x="332" y="113" text-anchor="middle">Let's Encrypt</text>
+          <text class="ts" x="332" y="131" text-anchor="middle">certificates</text>
+
+          <rect class="zone" x="8" y="164" width="384" height="416" rx="12"/>
+          <text class="tz" x="20" y="570">EC2 T4G.SMALL · UBUNTU 24.04 ARM · COMPOSE</text>
+
+          <path class="edge" d="M200,140 L200,194" marker-end="url(#arr)"/>
+          <path class="edge-dash" d="M332,142 L332,194" marker-start="url(#arr)" marker-end="url(#arr)"/>
+
+          <rect class="n" x="24" y="196" width="352" height="48" rx="8"/>
+          <text class="t" x="200" y="217" text-anchor="middle">caddy · :80 :443</text>
+          <text class="ts" x="200" y="235" text-anchor="middle">automatic HTTPS · proxy to app:3000</text>
+
+          <path class="edge" d="M200,244 L200,270" marker-end="url(#arr)"/>
+
+          <rect class="n-accent" x="24" y="272" width="352" height="100" rx="8"/>
+          <text class="t" x="200" y="292" text-anchor="middle">app · :3000 · one image</text>
+          <rect class="n" x="40" y="304" width="156" height="54" rx="6"/>
+          <text class="tc" x="118" y="326" text-anchor="middle">Express API</text>
+          <text class="tm" x="118" y="344" text-anchor="middle">/api/v1 · /healthz</text>
+          <rect class="n" x="204" y="304" width="156" height="54" rx="6"/>
+          <text class="tc" x="282" y="326" text-anchor="middle">React build</text>
+          <text class="tm" x="282" y="344" text-anchor="middle">/hq · /outlet</text>
+
+          <path class="edge" d="M118,372 L118,398" marker-end="url(#arr)"/>
+          <text class="tm" x="126" y="390">pos_app</text>
+
+          <rect class="n" x="24" y="400" width="212" height="52" rx="8"/>
+          <text class="t" x="130" y="421" text-anchor="middle">db · postgres:18</text>
+          <text class="ts" x="130" y="440" text-anchor="middle">schema pos · internal :5432</text>
+
+          <rect class="n-dash" x="248" y="400" width="128" height="52" rx="8"/>
+          <text class="t" x="312" y="421" text-anchor="middle">migrate</text>
+          <text class="ts" x="312" y="440" text-anchor="middle">runs, then exits</text>
+          <path class="edge-dash" d="M248,426 L238,426" marker-end="url(#arr)"/>
+
+          <path class="edge" d="M130,452 L130,478" marker-end="url(#arr)"/>
+
+          <rect class="n-vol" x="24" y="480" width="352" height="68" rx="8"/>
+          <text class="t" x="200" y="502" text-anchor="middle">/data · separate EBS volume</text>
+          <text class="ts" x="200" y="521" text-anchor="middle">Postgres data · Caddy certificates</text>
+          <text class="ts" x="200" y="538" text-anchor="middle">daily snapshots · never destroyed by Terraform</text>
+
+          <text class="tz" x="8" y="612">DELIVERY · ON PUSH TO MAIN</text>
+          <text class="ts" x="372" y="600" text-anchor="end">used by deploy.sh</text>
+
+          <rect class="n-accent" x="8" y="622" width="160" height="158" rx="8"/>
+          <text class="t" x="88" y="688" text-anchor="middle">GitHub Actions</text>
+          <text class="ts" x="88" y="707" text-anchor="middle">builds the ARM image</text>
+          <text class="ts" x="88" y="724" text-anchor="middle">OIDC role, no keys</text>
+
+          <path class="edge" d="M168,645 L208,645" marker-end="url(#arr)"/>
+          <path class="edge" d="M168,701 L208,701" marker-end="url(#arr)"/>
+          <path class="edge" d="M168,757 L208,757" marker-end="url(#arr)"/>
+          <text class="ta" x="188" y="639" text-anchor="middle">1</text>
+          <text class="ta" x="188" y="695" text-anchor="middle">2</text>
+          <text class="ta" x="188" y="751" text-anchor="middle">3</text>
+
+          <rect class="n" x="210" y="622" width="160" height="46" rx="8"/>
+          <text class="t" x="290" y="642" text-anchor="middle">ECR</text>
+          <text class="tm" x="290" y="660" text-anchor="middle">image:&lt;sha&gt;</text>
+          <rect class="n" x="210" y="678" width="160" height="46" rx="8"/>
+          <text class="t" x="290" y="698" text-anchor="middle">S3 deploy bucket</text>
+          <text class="tm" x="290" y="716" text-anchor="middle">releases/&lt;sha&gt;/</text>
+          <rect class="n" x="210" y="734" width="160" height="46" rx="8"/>
+          <text class="t" x="290" y="754" text-anchor="middle">SSM Run Command</text>
+          <text class="tm" x="290" y="772" text-anchor="middle">deploy.sh &lt;sha&gt;</text>
+
+          <path class="edge" d="M370,645 L386,645"/>
+          <path class="edge" d="M370,701 L386,701"/>
+          <path class="edge" d="M370,757 L386,757 L386,582" marker-end="url(#arr)"/>
+
+          <text class="tz" x="8" y="812">ALSO ON AWS</text>
+          <rect class="n" x="8" y="822" width="188" height="50" rx="8"/>
+          <text class="t" x="102" y="843" text-anchor="middle">Parameter Store</text>
+          <text class="ts" x="102" y="861" text-anchor="middle">secrets, read by deploy.sh</text>
+          <rect class="n" x="204" y="822" width="188" height="50" rx="8"/>
+          <text class="t" x="298" y="843" text-anchor="middle">CloudWatch Logs</text>
+          <text class="ts" x="298" y="861" text-anchor="middle">every container, 14 days</text>
+        </svg>
+        <div>
+          <ol class="notes">
+            <li><b>Address.</b> Route53 points <code>pos.&lt;domain&gt;</code> at an Elastic IP. The IP stays the same if the server is ever replaced.</li>
+            <li><b>Caddy</b> is the only container with open ports (80 and 443). It gets and renews the Let's Encrypt certificate by itself, adds <code>Strict-Transport-Security</code> <span class="prop">(proposed)</span>, and forwards every request to <code>app:3000</code>.</li>
+            <li><b>The app container</b> runs Express. It answers <code>/api/v1/*</code>, <code>/healthz</code> and <code>/readyz</code>, and serves the built React app for every other path, so the browser and the API share one origin and need no CORS (cross-origin resource sharing) setup.</li>
+            <li><b>Postgres</b> runs as a container on the same server, reachable only on the internal Docker network. The API connects as <code>pos_app</code> (data access only); <code>migrate</code> runs first as <code>migrator</code>, and the app starts only if it succeeds.</li>
+            <li><b>The data volume</b> is a separate EBS (Elastic Block Store) disk mounted at <code>/data</code>, snapshotted daily. Replacing the server never loses data or the certificate.</li>
+            <li><b>Delivery.</b> On every push to <code>main</code>, after CI passes, GitHub Actions signs in to AWS through OIDC (OpenID Connect, so no AWS keys are stored), pushes the image tagged with the commit SHA to ECR, uploads the <code>deploy/</code> files to S3, and runs <code>deploy.sh &lt;sha&gt;</code> on the server through SSM (Systems Manager). The script writes <code>.env</code> from Parameter Store, pulls, restarts, and fails the job if <code>/readyz</code> does not answer.</li>
+            <li><b>No SSH.</b> Port 22 is closed. Shell access is an SSM session.</li>
+          </ol>
+          <p class="caption">Solid arrows carry traffic; dashed ones are DNS lookups, certificate renewal and the one-shot migration.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="inside">
+    <div class="col">
+      <h2>Inside the app</h2>
+      <p class="intro">One TypeScript codebase per side. The API is split into layers that only call downward, and into eight business modules that each own their tables.</p>
+    </div>
+    <div class="app-grid">
+      <div>
+        <h3 style="margin-bottom:12px">Layers, top to bottom</h3>
+        <ol class="stack">
+          <li><b>Routes</b><span class="file">&lt;thing&gt;.routes.ts</span>
+            <p>Path, method, and the middleware for that route: <code>authenticate</code> and <code>requirePermission(...)</code>.</p></li>
+          <li><b>Controllers</b><span class="file">&lt;thing&gt;.controller.ts</span>
+            <p>Parse body, query and path with a zod <code>.strict()</code> schema, call one service use case, map the result to a response DTO (data transfer object).</p>
+            <p class="never">Never: SQL, business decisions, error bodies, logging.</p></li>
+          <li><b>Services</b><span class="file">&lt;thing&gt;.service.ts</span>
+            <p>Business rules, the outlet scope check, and the transaction boundary. A method without <code>tx</code> is a use case and opens the transaction with <code>withTx</code>; a method that takes <code>tx</code> is a step and joins it.</p>
+            <p class="never">Never: Express types, status codes, JSON, database row types.</p></li>
+          <li><b>Repositories</b><span class="file">&lt;thing&gt;.repository.ts</span>
+            <p>Call the generated queries with <code>tx</code> or the pool, map rows to models, map database errors with <code>mapPgError</code>.</p>
+            <p class="never">Never: business decisions, opening transactions, HTTP.</p></li>
+          <li class="gen"><b>pgtyped</b><span class="file">&lt;thing&gt;.sql &rarr; &lt;thing&gt;.queries.ts</span>
+            <p>SQL lives in <code>.sql</code> files. pgtyped checks it against a migrated database and generates typed functions, committed and never edited. CI regenerates them and fails on any difference.</p></li>
+          <li class="db"><b>PostgreSQL 18</b><span class="file">schema pos</span>
+            <p>Foreign keys, unique constraints and checks refuse anything the services let slip.</p></li>
+        </ol>
+      </div>
+      <div class="side">
+        <div>
+          <h3>Every request passes through</h3>
+          <ul class="chain" aria-label="Middleware order">
+            <li>requestId</li><li class="sep">&rarr;</li>
+            <li>securityHeaders</li><li class="sep">&rarr;</li>
+            <li>requestLog</li><li class="sep">&rarr;</li>
+            <li>json (1 MB)</li><li class="sep">&rarr;</li>
+            <li>routes</li><li class="sep">&rarr;</li>
+            <li class="per">authenticate</li><li class="sep">&rarr;</li>
+            <li class="per">requirePermission</li><li class="sep">&rarr;</li>
+            <li>controller</li><li class="sep">&rarr;</li>
+            <li>errorHandler</li>
+          </ul>
+          <p class="small">Dashed steps are added per route, never globally. Any thrown <code>AppError</code> (validation, unauthorized, forbidden, not_found, conflict and so on) becomes an RFC 7807 <code>application/problem+json</code> response, written only by <code>errorHandler</code>. Each request gets one JSON log line from pino with its <code>requestId</code>. <code>securityHeaders</code> <span class="prop">(proposed)</span> sets <code>X-Content-Type-Options: nosniff</code>, <code>Referrer-Policy: strict-origin-when-cross-origin</code>, <code>X-Frame-Options: DENY</code> and a strict <code>Content-Security-Policy</code>, with no new dependency; Caddy adds <code>Strict-Transport-Security</code>.</p>
+        </div>
+        <div>
+          <h3>Platform code shared by every module</h3>
+          <p class="small" style="margin-top:0"><code>src/platform/</code>: <b>config</b> (zod-checked loaders, <code>Secret</code>), <b>logger</b> (pino, request context in AsyncLocalStorage), <b>errors</b> (<code>AppError</code> kinds), <b>http</b> (request ID, security headers, request log, validation, error handler), <b>db</b> (pool, <code>withTx</code>, <code>mapPgError</code>), <b>auth</b> (ES256 token signer, <code>authenticate</code>, <code>requirePermission</code>, outlet scope helper), <b>health</b>. Platform code never imports a module.</p>
+        </div>
+        <div>
+          <h3>The web app</h3>
+          <p class="small" style="margin-top:0">React 19 and Vite, one build. HQ users land on <code>/hq</code>, outlet users on <code>/outlet</code>. Server data lives in TanStack Query; the browser calls relative <code>/api/v1/...</code> paths and never holds the token, because the session is an HttpOnly cookie. Buttons a user cannot use are hidden, and the API still checks every rule.</p>
+        </div>
+      </div>
+    </div>
+
+    <h3 style="margin:28px 0 12px">Modules (<code>src/modules/&lt;area&gt;</code>)</h3>
+    <div class="modules">
+      <div class="mod"><h4>auth</h4><p>Sign in, sign out, who am I. Checks the password and signs the access token.</p><span class="k">/auth/login · /auth/logout · /me</span></div>
+      <div class="mod"><h4>roles</h4><p>The permission catalog (defined in code) and HQ-managed roles. Built-in roles are locked.</p><span class="k">roles.manage · roles, permissions, role_permissions</span></div>
+      <div class="mod"><h4>users</h4><p>Create and edit users: role, outlet (none for HQ), status, password reset.</p><span class="k">users.manage · users</span></div>
+      <div class="mod"><h4>outlets</h4><p>Create and edit outlets. Creating one also creates its receipt counter row.</p><span class="k">outlets.manage · outlets, outlet_receipt_counters</span></div>
+      <div class="mod"><h4>menu</h4><p>Master items, outlet assignments and price overrides; the outlet menu with effective price and stock.</p><span class="k">menu.manage · menu.assign · menu.read</span></div>
+      <div class="mod"><h4>inventory</h4><p>Stock per outlet, restock and adjust. Every change writes a stock movement.</p><span class="k">inventory.read · inventory.adjust · inventory.manage</span></div>
+      <div class="mod"><h4>sales</h4><p>The sale transaction, sales list (keyset pages) and sale detail.</p><span class="k">sales.create · sales.read · sales, sale_items</span></div>
+      <div class="mod"><h4>reports</h4><p>Revenue and sale count by outlet; top 5 items per outlet. Read-only.</p><span class="k">reports.read</span></div>
+    </div>
+    <p class="caption col">A module reaches another only through its service. For example, the sales use case would call the inventory service's steps inside its own transaction <span class="prop">(proposed)</span>.</p>
+  </section>
+
+  <section id="why">
+    <div class="col">
+      <h2>Why we chose each thing</h2>
+      <p class="intro">What we picked, why, and what we gave up for it.</p>
+    </div>
+    <div class="why">
+      <article>
+        <span class="pick">Hosting</span>
+        <h3>One EC2 server with containers, not managed services</h3>
+        <p>Caddy, the app and Postgres run with Docker Compose on one <code>t4g.small</code>. It costs about $20 a month, is easy to reason about, and the same compose setup runs on a laptop. RDS, a load balancer and ECS would multiply the bill for traffic this system does not have.</p>
+        <p class="alt"><b>Trade-off:</b> one server is one point of failure, and we run Postgres ourselves. The separate data volume, daily snapshots and an automatic EC2 recover alarm limit the damage; moving to RDS is the first scaling step.</p>
+      </article>
+      <article>
+        <span class="pick">Edge</span>
+        <h3>Caddy, not nginx or a managed gateway</h3>
+        <p>Caddy gets and renews the HTTPS certificate on its own. The whole config is a few lines: the domain, compression, one <code>header</code> line for <code>Strict-Transport-Security</code> <span class="prop">(proposed)</span> and <code>reverse_proxy app:3000</code>. No certbot, no cron, no extra AWS service.</p>
+        <p class="alt"><b>Trade-off:</b> no edge rate limiting or web application firewall. Those belong to the scaling plan, not this build.</p>
+      </article>
+      <article>
+        <span class="pick">Web</span>
+        <h3>Express serves the React build</h3>
+        <p>One image holds the compiled API and the web build. The browser and the API share one origin, so there is no CORS, the cookie is a simple <code>__Host-</code> cookie, and one deploy ships both sides together.</p>
+        <p class="alt"><b>Trade-off:</b> static files come from Node, not a CDN (content delivery network). At this traffic that is invisible; a CDN can sit in front later without code changes.</p>
+      </article>
+      <article>
+        <span class="pick">Data access</span>
+        <h3>pgtyped, not an ORM</h3>
+        <p>The sale depends on exact SQL: conditional updates with <code>RETURNING</code> and a counter row lock. With pgtyped that SQL is written plainly and checked against the real schema, so a schema change turns into compile errors before anything ships.</p>
+        <p class="alt"><b>Trade-off:</b> more SQL written by hand, and generating types needs a migrated database (CI starts one). An ORM (object-relational mapper) would hide the locking behavior we most need to see.</p>
+      </article>
+      <article>
+        <span class="pick">Auth</span>
+        <h3>Cookie JWT carrying permission keys</h3>
+        <p>Sign-in sets an ES256-signed JWT (JSON Web Token) in an HttpOnly cookie that page scripts cannot read. It carries the user, the outlet and the permission keys, so each request is checked without a database lookup, and a route check is one set lookup.</p>
+        <p class="alt"><b>Trade-off:</b> the keys are a snapshot. A role change or a disabled user takes effect at the next sign-in, up to the 1-hour token life. There are no refresh tokens, so people sign in again when it expires.</p>
+      </article>
+      <article>
+        <span class="pick">Delivery</span>
+        <h3>Terraform, OIDC and SSM</h3>
+        <p>Every AWS resource is in Terraform, so the setup can be rebuilt from the repo. GitHub Actions assumes an AWS role through OIDC, limited to this repo's <code>main</code> branch, so no AWS keys are stored anywhere. Deploys run through SSM, so port 22 stays closed.</p>
+        <p class="alt"><b>Trade-off:</b> Terraform is applied by hand from a laptop, and a deploy restarts the app container in place, so a request may fail during the few seconds it takes. Rollback is deploying an older commit SHA.</p>
+      </article>
+      <article>
+        <span class="pick">Environments</span>
+        <h3>One environment, prod</h3>
+        <p>An assessment needs one working deployment. Changes are proven locally with <code>docker compose up --build</code> and in CI, where the tests start a real Postgres with testcontainers, before they reach <code>main</code>.</p>
+        <p class="alt"><b>Trade-off:</b> no staging copy to try a migration on real-shaped data. A second environment is a new Terraform state key and tfvars file away.</p>
+      </article>
+    </div>
+  </section>
+
+  <section id="requests">
+    <div class="col">
+      <h2>Three requests, end to end</h2>
+      <p class="intro">Each step is tagged with where it runs.</p>
+    </div>
+    <ul class="legend" aria-label="Where each step runs">
+      <li><span class="lane browser">Browser</span></li>
+      <li><span class="lane edge">Caddy</span></li>
+      <li><span class="lane http">Express</span></li>
+      <li><span class="lane service">Service</span></li>
+      <li><span class="lane db">Postgres</span></li>
+    </ul>
+    <div class="flows">
+
+      <article class="flow-card">
+        <h3>1. A cashier signs in</h3>
+        <p class="sub"><code>POST /api/v1/auth/login</code>, a public route.</p>
+        <ol class="steps">
+          <li><div class="step-head"><span class="lane browser">Browser</span><b>The sign-in form posts email and password</b></div>
+            <p>To <code>/api/v1/auth/login</code> on the same origin.</p></li>
+          <li><div class="step-head"><span class="lane edge">Caddy</span><b>HTTPS ends here</b></div>
+            <p>Caddy forwards the request to <code>app:3000</code>.</p></li>
+          <li><div class="step-head"><span class="lane http">Express</span><b>Request ID, request log, JSON body</b></div>
+            <p>No <code>authenticate</code> on this route. The controller parses the body with a strict zod schema; a bad body is a 400 problem with field errors.</p></li>
+          <li><div class="step-head"><span class="lane service">Service</span><span class="lane db">Postgres</span><b>Find the user and check the password</b></div>
+            <p>Look up the user by lower-cased email, require status <code>active</code>, and verify the argon2id hash. A wrong email, a wrong password and a disabled account all get the same 401: "Invalid email or password".</p></li>
+          <li class="key"><div class="step-head"><span class="lane service">Service</span><span class="lane db">Postgres</span><b>Load the role's permission keys and sign the token</b></div>
+            <p>ES256 JWT with <code>sub</code>, <code>outletId</code> (null for HQ), <code>perms</code>, <code>iat</code>, <code>exp</code> (1 hour). Record <code>last_sign_in_at</code>.</p></li>
+          <li><div class="step-head"><span class="lane http">Express</span><b>Set the cookie, return the user</b></div>
+            <p><code>Set-Cookie: __Host-pos_at=...; HttpOnly; Secure; Path=/</code>. The token itself never reaches JavaScript.</p></li>
+          <li><div class="step-head"><span class="lane browser">Browser</span><b>Load "me" and open the right app</b></div>
+            <p>The app reads <code>GET /api/v1/me</code>. A cashier lands on the sell screen at <code>/outlet</code>; an HQ user lands on <code>/hq</code>.</p></li>
+        </ol>
+      </article>
+
+      <article class="flow-card">
+        <h3>2. A cashier creates a sale</h3>
+        <p class="sub"><code>POST /api/v1/outlets/:outletId/sales</code> with an <code>Idempotency-Key</code> header. This is the path that must stay correct when many sales hit one outlet at once.</p>
+        <ol class="steps">
+          <li><div class="step-head"><span class="lane browser">Browser</span><b>Charge</b></div>
+            <p>Body <code>{ items: [{ menuItemId, quantity }] }</code>. The <code>Idempotency-Key</code> is a UUID made when the cart started and kept on every retry, so a lost response never sells twice.</p></li>
+          <li><div class="step-head"><span class="lane http">Express</span><b>authenticate, requirePermission('sales.create'), validate</b></div>
+            <p>Verify the cookie token and put the user (the "principal") in the request context. 403 without the key. The controller parses the body, path and header, then calls <code>createSale</code>.</p></li>
+          <li><div class="step-head"><span class="lane service">Service</span><b>Outlet scope</b></div>
+            <p>The cashier's <code>outletId</code> must equal the path's <code>:outletId</code>, otherwise 403.</p></li>
+          <li><div class="step-head"><span class="lane service">Service</span><span class="lane db">Postgres</span><b>Open one transaction, check the key</b></div>
+            <p><code>withTx</code>, READ COMMITTED. If a sale with this key already exists for the outlet, return it unchanged with the same <code>201</code> and stop.</p></li>
+          <li class="key"><div class="step-head"><span class="lane service">Service</span><b>Merge, then sort lines by <code>menu_item_id</code></b></div>
+            <p>Duplicate items become one line. The sort fixes the lock order, so two sales can never wait on each other's rows (no deadlock).</p></li>
+          <li><div class="step-head"><span class="lane db">Postgres</span><b>Price every line in one query</b></div>
+            <p>Unit price is <code>COALESCE(price_override_minor, base_price_minor)</code>. An item not assigned to the outlet, marked unavailable there (<code>is_available = false</code>), or inactive on the master menu rejects the whole sale with 409 <code>ErrItemNotSellable</code>.</p></li>
+          <li class="key"><div class="step-head"><span class="lane db">Postgres</span><b>Take stock with a conditional update, line by line</b></div>
+<pre>UPDATE pos.outlet_inventory
+   SET quantity = quantity - :quantity, updated_at = now()
+ WHERE outlet_id = :outletId AND menu_item_id = :menuItemId
+   AND quantity &gt;= :quantity
+RETURNING quantity;</pre>
+            <p class="why-step">No row back means not enough stock: 409 naming the item, and the rollback restores every earlier line. The check and the write are one statement, so no other sale can slip in between.</p></li>
+          <li class="key"><div class="step-head"><span class="lane db">Postgres</span><b>Take the receipt number last</b></div>
+<pre>UPDATE pos.outlet_receipt_counters
+   SET last_number = last_number + 1, updated_at = now()
+ WHERE outlet_id = :outletId
+RETURNING last_number;</pre>
+            <p class="why-step">The row lock makes sales at one outlet take numbers one after another, and is held only until commit. A rollback undoes the increment, so numbers have no gaps. Other outlets have their own row and never wait.</p></li>
+          <li><div class="step-head"><span class="lane db">Postgres</span><b>Insert the sale, its lines and the stock movements</b></div>
+            <p>Totals are computed in the service in integer minor units. Insert <code>sales</code>, then <code>sale_items</code> (each line freezes the item name and unit price), then one <code>stock_movements</code> row per line, with reason <code>sale</code>, a negative change and the sale's ID; the movements come after the sale row because of their foreign key to it.</p></li>
+          <li><div class="step-head"><span class="lane db">Postgres</span><b>Commit</b></div>
+            <p>If two requests with the same key raced past step 4, <code>UNIQUE (outlet_id, idempotency_key)</code> stops the second at insert; its whole transaction rolls back, receipt number included, and it re-reads and returns the first sale with <code>201</code>.</p></li>
+          <li><div class="step-head"><span class="lane http">Express</span><span class="lane browser">Browser</span><b>201 with the sale</b></div>
+            <p>The receipt shows <code>DHK01-000123</code>: the outlet code plus the zero-padded number. The cart starts fresh with a new key.</p></li>
+        </ol>
+        <div class="outcomes">
+          <div><b>Never MAX() + 1</b>Two sales read the same maximum and collide.</div>
+          <div><b>Never a sequence</b>Not per outlet, and leaves gaps on rollback.</div>
+          <div><b>Never read, then write stock</b>Another sale fits between the read and the write.</div>
+          <div><b>Proven by tests</b>50 concurrent sales get exactly 1..50; a race for the last units sells exactly what is there.</div>
+        </div>
+      </article>
+
+      <article class="flow-card">
+        <h3>3. HQ opens the revenue report</h3>
+        <p class="sub"><code>GET /api/v1/reports/revenue-by-outlet?from&amp;to</code>, shown on the HQ overview at <code>/hq</code>.</p>
+        <ol class="steps">
+          <li><div class="step-head"><span class="lane browser">Browser</span><b>The overview page asks for the report</b></div>
+            <p>A TanStack Query hook calls the revenue report and, alongside it, <code>GET /api/v1/reports/top-items</code> for the top 5 items.</p></li>
+          <li><div class="step-head"><span class="lane http">Express</span><b>authenticate, requirePermission('reports.read'), validate</b></div>
+            <p>The controller parses <code>from</code> and <code>to</code> with zod; a bad date is a 400.</p></li>
+          <li class="key"><div class="step-head"><span class="lane service">Service</span><b>Outlet scope decides the rows</b></div>
+            <p>An HQ user (no outlet) gets every outlet. An outlet manager calling the same endpoint gets only their own outlet.</p></li>
+          <li><div class="step-head"><span class="lane db">Postgres</span><b>One read on the pool, no transaction</b></div>
+            <p>Sum <code>total_minor</code> and count sales per outlet for the date range, joined to <code>outlets</code> for code and name. The index on <code>sales (outlet_id, created_at)</code> serves the range.</p></li>
+          <li><div class="step-head"><span class="lane http">Express</span><b>JSON response</b></div>
+            <p>One row per outlet: the outlet, revenue in minor units and sale count, in camelCase.</p></li>
+          <li><div class="step-head"><span class="lane browser">Browser</span><b>Render</b></div>
+            <p>Money is formatted only in <code>lib/money.ts</code>. The query result is cached, so returning to the page is instant while it refreshes.</p></li>
+        </ol>
+      </article>
+    </div>
+  </section>
+
+  <section id="access">
+    <div class="col">
+      <h2>Access control model</h2>
+      <p class="intro">Two kinds of user, one role each, permission keys in the token, and a second check on the outlet in the service.</p>
+    </div>
+    <div class="card">
+      <div class="figure">
+        <svg viewBox="0 0 400 620" role="img" aria-labelledby="ac-title ac-desc">
+          <title id="ac-title">Access control model</title>
+          <desc id="ac-desc">An HQ user has no outlet and an HQ-scope role; an outlet user has one outlet and an outlet-scope role. Each role holds permissions of its own scope plus the two any-scope permissions. The keys are copied into the access token, each route checks a key, and the service checks the outlet: HQ users may act on any outlet, outlet users only on their own.</desc>
+          <defs>
+            <marker id="arr3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path class="head" d="M0,0 L10,5 L0,10 z"/>
+            </marker>
+          </defs>
+
+          <rect class="n-accent" x="8" y="8" width="184" height="52" rx="8"/>
+          <text class="t" x="100" y="30" text-anchor="middle">HQ user</text>
+          <text class="tm" x="100" y="49" text-anchor="middle">outlet_id = null</text>
+          <rect class="n-accent" x="208" y="8" width="184" height="52" rx="8"/>
+          <text class="t" x="300" y="30" text-anchor="middle">Outlet user</text>
+          <text class="tm" x="300" y="49" text-anchor="middle">outlet_id = one outlet</text>
+
+          <path class="edge" d="M100,60 L100,84" marker-end="url(#arr3)"/>
+          <path class="edge" d="M300,60 L300,84" marker-end="url(#arr3)"/>
+          <text class="ts" x="200" y="77" text-anchor="middle">one role</text>
+
+          <rect class="n" x="8" y="86" width="184" height="66" rx="8"/>
+          <text class="t" x="100" y="107" text-anchor="middle">Role, scope hq</text>
+          <text class="ts" x="100" y="126" text-anchor="middle">HQ Admin (built-in, locked)</text>
+          <text class="ts" x="100" y="143" text-anchor="middle">+ roles HQ creates</text>
+          <rect class="n" x="208" y="86" width="184" height="66" rx="8"/>
+          <text class="t" x="300" y="107" text-anchor="middle">Role, scope outlet</text>
+          <text class="ts" x="300" y="126" text-anchor="middle">Outlet Manager · Cashier</text>
+          <text class="ts" x="300" y="143" text-anchor="middle">+ roles HQ creates</text>
+
+          <path class="edge" d="M100,152 L100,174" marker-end="url(#arr3)"/>
+          <path class="edge" d="M300,152 L300,174" marker-end="url(#arr3)"/>
+
+          <rect class="n" x="8" y="176" width="184" height="120" rx="8"/>
+          <text class="tz" x="100" y="195" text-anchor="middle">HQ PERMISSIONS</text>
+          <text class="tk" x="100" y="214" text-anchor="middle">outlets.manage</text>
+          <text class="tk" x="100" y="229" text-anchor="middle">menu.manage</text>
+          <text class="tk" x="100" y="244" text-anchor="middle">menu.assign</text>
+          <text class="tk" x="100" y="259" text-anchor="middle">inventory.manage</text>
+          <text class="tk" x="100" y="274" text-anchor="middle">users.manage</text>
+          <text class="tk" x="100" y="289" text-anchor="middle">roles.manage</text>
+          <rect class="n" x="208" y="176" width="184" height="120" rx="8"/>
+          <text class="tz" x="300" y="195" text-anchor="middle">OUTLET PERMISSIONS</text>
+          <text class="tk" x="300" y="222" text-anchor="middle">menu.read</text>
+          <text class="tk" x="300" y="241" text-anchor="middle">inventory.read</text>
+          <text class="tk" x="300" y="260" text-anchor="middle">inventory.adjust</text>
+          <text class="tk" x="300" y="279" text-anchor="middle">sales.create</text>
+
+          <path class="edge" d="M100,296 L100,310" />
+          <path class="edge" d="M300,296 L300,310" />
+          <rect class="n" x="8" y="310" width="384" height="44" rx="8"/>
+          <text class="ts" x="200" y="328" text-anchor="middle">plus, for either kind of role</text>
+          <text class="tk" x="200" y="345" text-anchor="middle">sales.read · reports.read</text>
+
+          <path class="edge" d="M200,354 L200,376" marker-end="url(#arr3)"/>
+
+          <rect class="n-accent" x="48" y="378" width="304" height="50" rx="8"/>
+          <text class="t" x="200" y="399" text-anchor="middle">Access token in HttpOnly cookie</text>
+          <text class="tm" x="200" y="417" text-anchor="middle">sub · outletId · perms · exp 1h</text>
+
+          <path class="edge" d="M200,428 L200,452" marker-end="url(#arr3)"/>
+
+          <rect class="n" x="48" y="454" width="304" height="52" rx="8"/>
+          <text class="t" x="200" y="475" text-anchor="middle">requirePermission on each route</text>
+          <text class="ts" x="200" y="494" text-anchor="middle">403 unless the token holds one of the keys</text>
+
+          <path class="edge" d="M200,506 L200,530" marker-end="url(#arr3)"/>
+
+          <rect class="n-vol" x="8" y="532" width="384" height="80" rx="8"/>
+          <text class="t" x="200" y="553" text-anchor="middle">Outlet scope check in the service</text>
+          <line class="divider" x1="200" y1="564" x2="200" y2="604"/>
+          <text class="tc" x="104" y="581" text-anchor="middle">HQ user</text>
+          <text class="ts" x="104" y="599" text-anchor="middle">any outlet</text>
+          <text class="tc" x="296" y="581" text-anchor="middle">Outlet user</text>
+          <text class="ts" x="296" y="599" text-anchor="middle">own outlet only, else 403</text>
+        </svg>
+        <div>
+          <ol class="notes">
+            <li><b>Two kinds of user.</b> A user with no outlet is an HQ user; a user tied to one outlet is outlet staff. Each user has exactly one role, and the role's scope must match the user's kind.</li>
+            <li><b>Permission keys</b> are named <code>area.action</code> and defined once in code (<code>src/modules/roles/permission.ts</code>). The migrate command syncs them into the <code>permissions</code> table; nobody edits that table by hand.</li>
+            <li><b>A role holds keys of its own scope</b>, plus the two <code>any</code> keys. The roles service refuses anything else, so an outlet role can never hold <code>users.manage</code>.</li>
+            <li><b>Seeded roles.</b> <code>HQ Admin</code> holds every HQ key and both <code>any</code> keys, and is locked so HQ cannot lock itself out. <code>Outlet Manager</code> holds every outlet and <code>any</code> key. <code>Cashier</code> holds <code>menu.read</code>, <code>sales.create</code> and <code>sales.read</code>. HQ can edit these two and create more.</li>
+            <li><b>Two checks per request.</b> The route checks the key; the service checks the outlet. <code>reports.read</code> on an HQ user means every outlet; on a manager it means their outlet only.</li>
+          </ol>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="data">
+    <div class="col">
+      <h2>Data model at a glance</h2>
+      <p class="intro">Twelve tables in the <code>pos</code> schema, simplified to their keys. Money is <code>bigint</code> minor units (<code>_minor</code>), times are <code>timestamptz</code>, IDs are UUIDv7 made by the API. Full detail lives in the database design document.</p>
+    </div>
+    <div class="dm">
+      <div class="dm-group">
+        <h3>Outlets and menu</h3>
+        <div class="tbl"><div class="name">outlets</div><ul>
+          <li>id <span class="tag">PK</span></li><li>code <span class="tag">UNIQUE</span> e.g. DHK01</li><li>name · address · is_active</li></ul></div>
+        <div class="tbl"><div class="name">outlet_receipt_counters</div><ul>
+          <li>outlet_id <span class="tag">PK</span> <span class="tag fk">&rarr; outlets</span></li><li>last_number &ge; 0</li></ul>
+          <p class="note">Created with the outlet; one row lock per outlet.</p></div>
+        <div class="tbl"><div class="name">menu_items</div><ul>
+          <li>id <span class="tag">PK</span></li><li>sku <span class="tag">UNIQUE</span></li><li>name · category · base_price_minor &ge; 0 · is_active</li></ul></div>
+        <div class="tbl"><div class="name">outlet_menu_items</div><ul>
+          <li>(outlet_id, menu_item_id) <span class="tag">PK</span></li><li><span class="tag fk">&rarr; outlets</span> <span class="tag fk">&rarr; menu_items</span></li><li>price_override_minor (null = base) · is_available</li></ul></div>
+      </div>
+      <div class="dm-group">
+        <h3>Stock and sales</h3>
+        <div class="tbl"><div class="name">outlet_inventory</div><ul>
+          <li>(outlet_id, menu_item_id) <span class="tag">PK</span> <span class="tag fk">&rarr; outlet_menu_items</span></li><li>quantity &ge; 0</li></ul>
+          <p class="note">Created at 0 when the item is assigned.</p></div>
+        <div class="tbl"><div class="name">stock_movements</div><ul>
+          <li>id <span class="tag">PK</span></li><li>outlet_id · menu_item_id · change</li><li>reason: sale | restock | adjustment</li><li>sale_id <span class="tag fk">&rarr; sales, optional</span> created_by <span class="tag fk">&rarr; users</span></li></ul>
+          <p class="note">Append-only audit trail of every stock change.</p></div>
+        <div class="tbl"><div class="name">sales</div><ul>
+          <li>id <span class="tag">PK</span> outlet_id <span class="tag fk">&rarr; outlets</span></li><li>receipt_number <span class="tag">UNIQUE per outlet</span></li><li>idempotency_key <span class="tag">UNIQUE per outlet</span></li><li>item_count · total_minor · created_by <span class="tag fk">&rarr; users</span></li></ul></div>
+        <div class="tbl"><div class="name">sale_items</div><ul>
+          <li>(sale_id, line_no) <span class="tag">PK</span> <span class="tag fk">&rarr; sales</span></li><li>(outlet_id, menu_item_id) <span class="tag fk">&rarr; outlet_menu_items</span></li><li>item_name · unit_price_minor (frozen)</li><li>quantity &gt; 0 · line_total_minor</li></ul></div>
+      </div>
+      <div class="dm-group">
+        <h3>People and access</h3>
+        <div class="tbl"><div class="name">users</div><ul>
+          <li>id <span class="tag">PK</span> email <span class="tag">UNIQUE, any case</span></li><li>outlet_id <span class="tag fk">&rarr; outlets, null = HQ</span></li><li>role_id <span class="tag fk">&rarr; roles</span></li><li>password_hash · status: active | disabled</li></ul></div>
+        <div class="tbl"><div class="name">roles</div><ul>
+          <li>id <span class="tag">PK</span> name <span class="tag">UNIQUE</span></li><li>scope: hq | outlet · is_system</li></ul></div>
+        <div class="tbl"><div class="name">permissions</div><ul>
+          <li>key <span class="tag">PK</span> e.g. sales.create</li><li>scope: hq | outlet | any</li></ul>
+          <p class="note">Synced from code by the migrate command.</p></div>
+        <div class="tbl"><div class="name">role_permissions</div><ul>
+          <li>(role_id, permission_key) <span class="tag">PK</span></li><li><span class="tag fk">&rarr; roles</span> <span class="tag fk">&rarr; permissions</span></li></ul></div>
+      </div>
+    </div>
+    <div class="card" style="margin-top:18px">
+      <h3 style="margin-bottom:10px">How they relate</h3>
+      <ul class="rels">
+        <li><b>Outlets and the master menu</b> meet in <code>outlet_menu_items</code>: one row per item assigned to an outlet, with an optional price override. Effective price is the override, else the base price.</li>
+        <li><b>Each assignment has one stock row</b> in <code>outlet_inventory</code>, and every change to it (sale, restock, adjustment) adds a <code>stock_movements</code> row.</li>
+        <li><b>An outlet has many sales</b>, a sale has many <code>sale_items</code>. Lines freeze the item name and price, so editing the menu never rewrites history. <code>sale_items</code> copies <code>outlet_id</code> so the top-items report reads one index.</li>
+        <li><b>Each outlet has one counter row</b> in <code>outlet_receipt_counters</code>, the source of its receipt numbers.</li>
+        <li><b>Users</b> point to one role and, for outlet staff, one outlet. Roles get permissions through <code>role_permissions</code>. Sales and stock movements record who made them.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section id="cost">
+    <div class="col">
+      <h2>What it costs per month</h2>
+      <p class="intro">Rough on-demand prices from the infrastructure plan. Traffic is small, so almost everything is fixed cost.</p>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Item</th><th class="num">Monthly</th></tr></thead>
+        <tbody>
+          <tr><td>EC2 <code>t4g.small</code>, on demand</td><td class="num">$12-16</td></tr>
+          <tr><td>Disks: 12 GB root + 20 GB data, gp3</td><td class="num">~$3</td></tr>
+          <tr><td>Public IPv4 address (Elastic IP)</td><td class="num">~$3.65</td></tr>
+          <tr><td>EBS snapshots, ECR, S3, CloudWatch Logs</td><td class="num">under $1</td></tr>
+          <tr><td>Route53 hosted zone</td><td class="num">already paid</td></tr>
+          <tr class="total"><td>Total</td><td class="num">~$20-24</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="caption col">The infrastructure plan rounds this to "about $20"; the line items add up to $19-24 depending on region. Nothing here scales with sales volume except logs and snapshots.</p>
+  </section>
+
+  <section id="grow">
+    <div class="col">
+      <h2>How it grows</h2>
+      <p class="intro">The brief's target is 10 outlets and 100,000 sales a month. That load is small for Postgres, so the first steps are about safety and reporting speed, not raw capacity. The full scaling plan, the path to microservices and the offline POS strategy live in the architecture document (<a href="architecture.md">docs/architecture.md</a>).</p>
+    </div>
+    <div class="col">
+      <p class="muted" style="font-size:0.9rem">Back-of-envelope numbers, assuming 3 lines per sale and a busy hour of 4 times the average <span class="prop">(proposed)</span>:</p>
+      <div class="load">
+        <div><b>~3,300</b><span>sales a day across 10 outlets</span></div>
+        <div><b>~700,000</b><span>new rows a month (sales, lines, stock movements)</span></div>
+        <div><b>~0.3 / s</b><span>sales at the busiest hour, each about 10 statements</span></div>
+        <div><b>~3 GB</b><span>a year of data and indexes; the volume holds 20 GB</span></div>
+      </div>
+      <ol class="grow">
+        <li><b>Keep the shape, watch the queries.</b> The indexes on <code>sales (outlet_id, created_at)</code> and <code>sale_items (outlet_id, menu_item_id)</code> already match the reports. Receipt counters are per outlet, so outlets never wait on each other.</li>
+        <li><b>Move Postgres to RDS</b> with Multi-AZ and point-in-time recovery. The app image does not change; only the connection settings do.</li>
+        <li><b>Pre-compute reports</b> with a daily summary per outlet and item, so reports stop scanning raw sales as history grows <span class="prop">(proposed)</span>. Later, a read replica serves reports.</li>
+        <li><b>Two or more app servers behind a load balancer.</b> Tokens are stateless, so any server can answer any request.</li>
+        <li><b>Split services where it pays.</b> Reports first, as a read-only consumer; the sale transaction stays together with inventory.</li>
+      </ol>
+    </div>
+  </section>
+
+  <section id="open">
+    <div class="col">
+      <h2>Still to decide</h2>
+      <p class="intro">Open questions, each settled in the spec of the feature it touches.</p>
+    </div>
+    <ul class="open">
+      <li><b>Migration runner library</b><span>Chosen in the foundation spec; migrations stay plain numbered SQL either way.</span></li>
+      <li><b>Session length at the till</b><span>A 1-hour token with no refresh signs a cashier out mid-shift. Longer tokens for outlet roles, or a refresh flow?</span></li>
+      <li><b>Revoking access early</b><span>A disabled user or changed role keeps the old token until it expires. Is up to 1 hour acceptable?</span></li>
+      <li><b>Report day boundaries</b><span>Are <code>from</code> and <code>to</code> UTC instants or the outlet's local day, and is <code>to</code> inclusive?</span></li>
+      <li><b>Sign-in rate limiting</b><span>No edge limit in this build; an in-app limit on <code>/auth/login</code> would use the <code>rate_limited</code> error kind.</span></li>
+      <li><b>Database TLS on the host network</b><span>Connections never leave the Docker network, so TLS is relaxed for <code>db</code>; recorded as an ADR (architecture decision record) in the foundation.</span></li>
+      <li><b>Backups beyond snapshots</b><span>Daily EBS snapshots only. Add a nightly <code>pg_dump</code> to S3 as a copy off the volume?</span></li>
+      <li><b>Alarm notifications</b><span>The EC2 recover alarm acts on its own but tells no one. Email or chat alerts?</span></li>
+      <li><b>Voids and refunds</b><span>Not in scope. A refund would add a stock movement and a negative sale, never edit a sale.</span></li>
+    </ul>
+  </section>
+
+  <footer>
+    Sources: <code>CLAUDE.md</code>, <code>.claude/rules/</code>, <code>docs/infrastructure.md</code>. The rules files win where this page and they disagree.
+  </footer>
+
+</div>
+</body>
+</html>
