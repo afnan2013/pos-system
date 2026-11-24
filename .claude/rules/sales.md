@@ -8,6 +8,7 @@ paths:
 
 Reviewers of the assessment will test this hardest.
 Every rule below exists to keep stock and receipt numbers correct when many sales hit one outlet at the same time.
+Full design: `docs/database-design.md` ("Transactions and concurrency") and `docs/backend-design-patterns.md` ("The sale flow", "Required sales concurrency tests").
 
 ## Creating a sale (one use case, one transaction)
 

@@ -34,7 +34,7 @@ api/            Express API (TypeScript): src/platform, src/modules/<area>, migr
 web/            React app: HQ console and outlet POS screens, one build
 infra/          Terraform for AWS
 deploy/         files that run on the server: production compose, Caddyfile, deploy.sh, initdb
-docs/           design docs, architecture document, infrastructure plan
+docs/           design docs, infrastructure plan, architecture document (not written yet)
 Dockerfile      one image: web build + compiled API
 docker-compose.yml   local stack for reviewers: db, migrate, app
 .claude/rules/  path-scoped guidance (see below)
@@ -53,6 +53,8 @@ Area rules load on demand, when a file matching their `paths` is read or edited:
 | `.claude/rules/frontend.md` | `web/**` | stack, folders, API client, server state, access in the UI |
 | `.claude/rules/infra.md` | `infra/**`, `deploy/**`, Docker files, workflows | Terraform, containers, deploy, what Claude may run |
 | `.claude/rules/docs.md` | `docs/**`, `README.md` | writing style and what each document must contain |
+
+A rule file loads only when a matching file is touched, so before speccing or designing work in an area, read that area's rule file yourself.
 
 Deeper detail, read only when needed: `docs/backend-design-patterns.md`, `docs/database-design.md`, `docs/frontend-engineering.md`, `docs/ui-blueprint.html`, `docs/infrastructure.md`.
 `docs/system-design.html` and `docs/backend-guide.html` are visual explainers of the same design for people.

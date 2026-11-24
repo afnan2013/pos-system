@@ -18,7 +18,7 @@ paths:
 ## What each document must contain
 
 - **`README.md`** (the brief grades it): setup instructions (local with Docker, local without Docker), demo URL and demo logins, API endpoints (method, path, permission, short purpose), schema explanation, architecture explanation, scaling strategy summary linking to the architecture document.
-- **`docs/architecture.md`** (the brief's architecture document):
+- **`docs/architecture.md`** (the brief's architecture document; not written yet, so never cite it as a source):
   - ERD of every table and relationship.
   - Scaling plan for 10 outlets and 100,000 transactions a month, covering database scaling, reporting performance, infrastructure and architectural evolution, with numbers (rows per month, writes per second at peak, index and storage growth).
   - Conversion to microservices: which parts split out first and why, and what stays together.
