@@ -1,0 +1,98 @@
+#cloud-config
+write_files:
+  - path: /etc/docker/daemon.json
+    owner: root:root
+    permissions: "0644"
+    content: |
+      {
+        "log-driver": "json-file",
+        "log-opts": {
+          "max-size": "10m",
+          "max-file": "3"
+        }
+      }
+
+runcmd:
+  - - bash
+    - -c
+    - |
+      set -euo pipefail
+      export DEBIAN_FRONTEND=noninteractive
+
+      wait_until() {
+        local what=$1
+        shift
+        local deadline=$((SECONDS + 300))
+        until "$@"; do
+          if [ "$SECONDS" -ge "$deadline" ]; then
+            echo "gave up after 300 s waiting for $what" >&2
+            exit 1
+          fi
+          sleep 5
+        done
+      }
+
+      apt_get() {
+        apt-get -y -o Acquire::Retries=5 -o DPkg::Lock::Timeout=300 "$@"
+      }
+
+      # The Elastic IP is associated only after the instance is running, and there is no NAT.
+      wait_until "outbound internet" curl -fsS --max-time 5 -o /dev/null https://download.docker.com/linux/ubuntu/gpg
+
+      apt_get update
+      apt_get install ca-certificates curl jq unzip
+
+      install -m 0755 -d /etc/apt/keyrings
+      curl -fsSL --retry 5 https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+      chmod a+r /etc/apt/keyrings/docker.asc
+      echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" > /etc/apt/sources.list.d/docker.list
+      apt_get update
+      apt_get install docker-ce docker-ce-cli containerd.io docker-compose-plugin
+      systemctl enable --now docker
+
+      awscli_dir=$(mktemp -d)
+      curl -fsSL --retry 5 "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o "$awscli_dir/awscliv2.zip"
+      unzip -q "$awscli_dir/awscliv2.zip" -d "$awscli_dir"
+      "$awscli_dir/aws/install" --update
+      rm -rf "$awscli_dir"
+
+      if [ ! -f /swapfile ]; then
+        fallocate -l 2G /swapfile
+        chmod 600 /swapfile
+        mkswap /swapfile
+      fi
+      if ! grep -q '^/swapfile ' /proc/swaps; then
+        swapon /swapfile
+      fi
+      if ! grep -q '^/swapfile ' /etc/fstab; then
+        echo '/swapfile none swap sw 0 0' >> /etc/fstab
+      fi
+
+      data_dev=/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_${replace(data_volume_id, "-", "")}
+      wait_until "the data volume at $data_dev" test -b "$data_dev"
+
+      # blkid exits 2 only when the device has no filesystem; any other failure must not reach mkfs.
+      blkid_status=0
+      blkid -p "$data_dev" > /dev/null || blkid_status=$?
+      if [ "$blkid_status" -eq 2 ]; then
+        mkfs.ext4 "$data_dev"
+      elif [ "$blkid_status" -ne 0 ]; then
+        echo "blkid failed on $data_dev with status $blkid_status" >&2
+        exit 1
+      fi
+
+      data_uuid=$(blkid -p -s UUID -o value "$data_dev")
+      if [ -z "$data_uuid" ]; then
+        echo "no filesystem UUID on $data_dev" >&2
+        exit 1
+      fi
+      mkdir -p /data
+      if ! grep -q "^UUID=$data_uuid " /etc/fstab; then
+        echo "UUID=$data_uuid /data ext4 defaults,nofail 0 2" >> /etc/fstab
+      fi
+      systemctl daemon-reload
+      if ! mountpoint -q /data; then
+        mount /data
+      fi
+
+      mkdir -p /data/postgres /data/caddy /opt/pos
