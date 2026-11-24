@@ -1,0 +1,9 @@
+# Optional: every variable has a default in variables.tf. Copy to terraform.tfvars only to override one.
+project_name        = "techzu-pos"
+aws_region          = "ap-south-1"
+root_domain         = "afnanio.top"
+subdomain           = "pos"
+github_repo         = "afnan2013/pos-system"
+instance_type       = "t4g.small"
+data_volume_size_gb = 20
+log_retention_days  = 7
