@@ -1,0 +1,24 @@
+# AI guidance and the ADLC vault stay on this machine
+.adlc/
+
+# Dependencies and build output
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Local config and secrets
+.env
+.env.*
+!.env.example
+
+# Terraform
+infra/terraform/.terraform/
+infra/terraform/*.tfstate
+infra/terraform/*.tfstate.*
+infra/terraform/terraform.tfvars
+
+# Editors and OS
+.DS_Store
+.idea/
+.vscode/
