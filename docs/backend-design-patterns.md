@@ -71,15 +71,24 @@ api/
   test/                     mirrors src/: test/platform/db/with-tx.test.ts tests src/platform/db/with-tx.ts; support/ holds shared helpers
   src/
     main.ts                 run: loadSettings -> logger -> pool -> buildApp -> serveUntilStopped
-    app.ts                  buildApp: express() -> platform stack -> mountRoutes -> static web + SPA fallback -> notFound -> errorHandler
+    app.ts                  buildApp: express() -> platform stack -> mountRoutes -> static web + SPA fallback -> notFoundHandler -> errorHandler
     services.ts             buildServices: construct every repository and service once, wire dependencies
     routes.ts               mountRoutes: one line per module
     platform/
+      clock.ts              Clock, systemClock (no caller until the first module needs the time)
+      ids.ts                IdGenerator, uuidV7Ids
+      process.ts            serveUntilStopped, startServer, stopServer, installProcessHandlers
+      has-property.ts       hasProperty: narrows unknown to an object with a given key
       config/               loadBase, loadDatabase, loadHttp, loadTokenSettings; Secret
       logger/               createLogger (pino JSON to stdout), request context (AsyncLocalStorage), logger()
       errors/               AppError, kinds, constructors, kindOf, isError, withTitle
-      http/                 requestId, securityHeaders, requestLog, jsonBody, errorHandler (writeProblem), validate, respond, notFound, methodNotAllowed
+        to-app-error.ts     toAppError: any thrown value -> AppError (body-parser errors become validation)
+      http/                 requestId, securityHeaders, requestLog, jsonBody, errorHandler (writeProblem), validate, respond, methodNotAllowed
+        route-pattern.ts    recordRoutePrefix, routeOf, allowedMethods: the matched route pattern for logs and 405s
+        serve-web.ts        serveWeb: the built React app, cache headers, the SPA fallback
+        not-found-handler.ts  notFoundHandler: unmatched path -> 404 problem
       db/                   createPool, withTx, mapPgError, Db / Tx types
+        loggable-error.ts   databaseErrorLog, loggableError: a Postgres error reduced to codes and names for the log
       auth/                 token signer (ES256), authenticate, requirePermission, Principal, assertOutletAccess
       health/               GET /healthz, GET /readyz (outside /api)
     modules/
@@ -147,16 +156,16 @@ export function buildApp(services: Services): Express {
   app.use(jsonBody);
   registerHealthRoutes(app, services.pool);
   app.use('/api/v1', mountRoutes(services, services.auth));
-  app.use('/api', notFound);
+  app.use('/api', notFoundHandler);
   serveWeb(app, WEB_BUILD_DIR);
-  app.use(notFound);
+  app.use(notFoundHandler);
   app.use(errorHandler);
   return app;
 }
 ```
 
 - `trust proxy` is set to one hop (Caddy), so `req.protocol` and `req.ip` reflect the browser, not the proxy **(proposed)**.
-- `app.use('/api', notFound)` sits before the web fallback, so a mistyped API path answers a 404 problem, never `index.html`.
+- `app.use('/api', notFoundHandler)` sits before the web fallback, so a mistyped API path answers a 404 problem, never `index.html`.
 - `serveWeb` serves the built React app from `api/public` (hashed assets `Cache-Control: public, max-age=31536000, immutable`, `index.html` `no-cache`) and answers any other `GET` that accepts HTML with `index.html`, so client routes like `/hq/menu` survive a reload.
 - `serveUntilStopped` listens on `HTTP_PORT`; on `SIGTERM` or `SIGINT` it stops accepting connections, waits up to `SHUTDOWN_TIMEOUT` for in-flight requests, closes what is left, then ends the pool.
 
@@ -959,14 +968,19 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
 };
 ```
 
-- It is registered last, after `notFound`, and has the four-argument signature Express needs to treat it as an error handler.
+- It is registered last, after `notFoundHandler`, and has the four-argument signature Express needs to treat it as an error handler.
 - **Headers already sent:** if the response has started (a streamed body failed half way), it logs the error at `error` ("error after response started") and destroys the socket instead of writing, so the client sees a broken response, never a truncated one that looks complete.
 - **Logging:** `unexpected` at `error` with the `cause` chain and stack; `unavailable` at `warn`; `canceled` at `info`; every other kind is not logged, because the request line already records the status.
+  The one addition: a `validation` error that came from the database (a check violation) logs "database rejected the input" at `info`, so the constraint name is findable.
+- **Postgres errors in the log carry names and codes only:** SQLSTATE, constraint, schema, table, column, data type and routine.
+  `loggableError` and `databaseErrorLog` (`platform/db/loggable-error.ts`) reduce any error whose `cause` chain holds a Postgres error to those fields, plus the outer error's type and stack.
+  The message, detail, where and hint are dropped, because Postgres quotes row values in them ("Key (email)=(a@b.c) already exists").
+  Keeping this in `platform/db` means `platform/http` never imports the `pg` driver.
   Each line carries the request's `requestId`, `route`, and on authenticated routes `userId` and `outletId`, from the context logger.
 - An error is logged once, here.
   Code never logs an error and also rethrows it.
   The one exception: `withTx` logs a failed rollback at `warn`, because that error never reaches `errorHandler` (the original error does).
-- `notFound` (unmatched paths) and `methodNotAllowed` (wrong method) also end here, so 404 and 405 are problems like every other error.
+- `notFoundHandler` (unmatched paths) and `methodNotAllowed` (wrong method) also end here, so 404 and 405 are problems like every other error.
 
 ### Errors that escape Express
 
@@ -1193,7 +1207,7 @@ Settings are read once at startup by explicit loaders in `platform/config`, each
 | `loadDatabase` | `DB_MAX_CONNS` | whole number 1 to 50; default 10 **(proposed default)** | server, seed |
 | `loadHttp` | `HTTP_PORT` | default 3000 | server |
 | `loadHttp` | `PUBLIC_ORIGIN` | required; the address people open; `https` turns on the `__Host-` cookie and `Secure` | server |
-| `loadHttp` | `SHUTDOWN_TIMEOUT` | a duration like `10s`; default `10s` **(proposed setting)** | server |
+| `loadHttp` | `SHUTDOWN_TIMEOUT` | a duration like `10s`, at most `1m`; default `10s`; every compose file forwards it, and the containers' 30-second `stop_grace_period` must stay longer | server |
 | `loadTokenSettings` | `TOKEN_SIGNING_KEY` | required; an ECDSA P-256 private key as PKCS#8 PEM, base64-encoded on one line; decoded to the PEM on load; held as a `Secret` | server |
 | `loadTokenSettings` | `ACCESS_TOKEN_TTL` | a duration up to `24h`; default `1h` | server |
 | seed CLI | `SEED_ADMIN_PASSWORD` | required by the seed only; the first HQ admin's password; held as a `Secret` **(proposed shape)** | seed |
@@ -1329,7 +1343,7 @@ requestId -> securityHeaders -> requestLog -> express.json (1 MB) -> routes -> a
 | `securityHeaders` **(proposed)** | A small middleware in `src/platform/http`, with no new dependency, that sets `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `X-Frame-Options: DENY` and a strict `Content-Security-Policy` for the web app on every response; Caddy adds `Strict-Transport-Security` | The browser refuses to guess content types, to leak full URLs to other sites, to frame the app, and to run scripts from anywhere but our origin |
 | `requestLog` | Write exactly one `info` line per request, on `finish` or on `close`, whichever comes first (section 15). | One line per request is the access log; nothing else writes one. |
 | `jsonBody` (`express.json`) | `limit: '1mb'`, `strict: true` (objects and arrays only), `application/json` only; its `next` is re-bound to the request context; parse errors and oversized bodies become fixed problem messages (section 10) | A size cap stops memory abuse; the fixed message stops the parser quoting a body that may hold a password. |
-| routes | `/healthz`, `/readyz`; the `/api/v1` router; `/api` not-found; the web app and its fallback; `notFound`. | The order keeps API typos as 404 problems instead of `index.html`. |
+| routes | `/healthz`, `/readyz`; the `/api/v1` router; `/api` not-found; the web app and its fallback; `notFoundHandler`. | The order keeps API typos as 404 problems instead of `index.html`. |
 | `authenticate` (per route) | Bearer header first, then the cookie; verify the ES256 JWT locally; check `Origin` on unsafe methods **(proposed)**; set `principal` and the logger fields. 401 on any token problem. | Protection is visible on each route, and a public route is simply one without it. |
 | `requirePermission` (per route) | 403 unless the token holds at least one of the listed keys; 401 if there is no principal. | Only our code knows roles; object-level rules (own outlet) stay in the service. |
 | controller | Parse, call one use case, respond. | - |
@@ -1405,6 +1419,7 @@ Written once per request by `requestLog`:
 - Tokens, cookies, `Authorization` headers, the signing key.
 - Connection strings.
 - Names or emails of people; log IDs only.
+- A Postgres error's message, detail, where or hint, which can quote row values; only its SQLSTATE, constraint, schema, table, column, data type and routine are logged (section 10, `errorHandler`).
 
 pino's `redact` option also blanks `password`, `passwordHash`, `token`, `authorization` and `cookie` at any depth, as a backstop if one slips into a log call **(proposed)**.
 

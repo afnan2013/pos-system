@@ -63,7 +63,8 @@ The screens read nothing else about the user.
 
 ```
 web/
-  index.html              loads public/theme.js with a blocking <script src="/theme.js">, then the app
+  index.html              links the favicon, loads public/theme.js with a blocking <script src="/theme.js">, then the app
+  public/favicon.svg      the tab icon, so no page load logs a 404 for /favicon.ico
   public/theme.js         sets the dark class on <html> from localStorage pos-theme before React draws (no flash of the wrong theme)
   vite.config.ts          port 5173; proxies /api, /healthz, /readyz to VITE_API_PROXY_TARGET (default http://localhost:3000)
   src/

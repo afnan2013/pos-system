@@ -14,15 +14,20 @@ Full rulebook: `docs/backend-design-patterns.md`.
 api/
   src/
     main.ts               run: loadSettings -> logger -> pool -> buildApp -> serveUntilStopped (SIGTERM: stop accepting, drain, close pool)
-    app.ts                buildApp: express() -> platform stack -> mountRoutes -> static web + SPA fallback -> notFound -> errorHandler
+    app.ts                buildApp: express() -> platform stack -> mountRoutes -> static web + SPA fallback -> notFoundHandler -> errorHandler
     services.ts           buildServices: construct every repository and service once, wire dependencies
     routes.ts             mountRoutes: one line per module
     platform/
+      clock.ts            Clock, systemClock (unused until the first module)
+      ids.ts              IdGenerator, uuidV7Ids
+      process.ts          serveUntilStopped, startServer, stopServer, installProcessHandlers
+      has-property.ts     hasProperty: narrows unknown to an object with a given key
       config/             loadBase, loadDatabase, loadHttp, loadTokenSettings; Secret
       logger/             createLogger (pino JSON to stdout), request context (AsyncLocalStorage), logger()
-      errors/             AppError, kinds, constructors, kindOf, isError, withTitle
-      http/               requestId, securityHeaders, requestLog, jsonBody, errorHandler (writeProblem), validate, respond, notFound, methodNotAllowed
-      db/                 createPool, withTx, mapPgError, Db / Tx types
+      errors/             AppError, kinds, constructors, kindOf, isError, withTitle; to-app-error.ts (toAppError)
+      http/               requestId, securityHeaders, requestLog, jsonBody, errorHandler (writeProblem), validate, respond, methodNotAllowed;
+                          route-pattern.ts (routeOf, allowedMethods), serve-web.ts (serveWeb), not-found-handler.ts (notFoundHandler)
+      db/                 createPool, withTx, mapPgError, Db / Tx types; loggable-error.ts (Postgres errors as codes and names only)
       auth/               token signer (ES256), authenticate, requirePermission, Principal, assertOutletAccess
       health/             GET /healthz, GET /readyz (outside /api)
     modules/<area>/       auth, roles, users, outlets, menu, inventory, sales, reports
@@ -75,7 +80,7 @@ Dependencies point down only.
 - **`errorHandler` is the only code that writes an error body**: RFC 7807 `application/problem+json` with `type`, `title`, `status`, `instance`, `requestId`, and `errors` only for validation; `Cache-Control: no-store`; 500s never leak internals.
 - If headers were already sent, `errorHandler` logs and destroys the socket instead of writing a body.
 - Express 5 forwards thrown errors and rejected promises to `errorHandler`; `unhandledRejection` and `uncaughtException` log at fatal and exit, and Docker restarts the container.
-- An unknown path gives 404 through `notFound`; a known path with the wrong method gives 405 through `methodNotAllowed` (slug `method-not-allowed`); both go through `errorHandler`.
+- An unknown path gives 404 through `notFoundHandler`; a known path with the wrong method gives 405 through `methodNotAllowed` (slug `method-not-allowed`); both go through `errorHandler`.
 - `canceled` (499) comes from the request's `AbortSignal` in the request context, aborted when the client disconnects.
 
 ## Middleware chain (outermost first)
@@ -94,6 +99,7 @@ Dependencies point down only.
 - Code logs through `logger()` from the request context, never `console.log`.
 - `error` level only for unexpected failures, logged **once**, in `errorHandler` (with the cause chain and stack). `unavailable` logs at warn, `canceled` at info. Never log an error and also rethrow it.
 - Never logged: request or response bodies, passwords, tokens, cookies, `Authorization` headers. IDs only.
+- A Postgres error reaches the log only through `loggableError` / `databaseErrorLog`: SQLSTATE, constraint, schema, table, column, data type and routine; never its message, detail, where or hint, which can quote row values.
 
 ## Config
 
