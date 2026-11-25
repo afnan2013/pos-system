@@ -1,0 +1,90 @@
+name: pos
+
+x-awslogs: &awslogs
+  awslogs-group: ${LOG_GROUP:?run deploy.sh to write .env}
+  awslogs-region: ${AWS_REGION:?run deploy.sh to write .env}
+
+services:
+  db:
+    image: postgres:18.7-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run deploy.sh to write .env}
+      POSTGRES_DB: pos
+      MIGRATOR_PASSWORD: ${MIGRATOR_PASSWORD:?run deploy.sh to write .env}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?run deploy.sh to write .env}
+    volumes:
+      - /data/postgres:/var/lib/postgresql
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      # Over TCP, because the init-time server listens only on the socket until initdb scripts finish.
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "postgres", "-d", "pos"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 30s
+    logging:
+      driver: awslogs
+      options:
+        <<: *awslogs
+        tag: "db/{{.ID}}"
+
+  migrate:
+    image: ${ECR_REPOSITORY_URL:?run deploy.sh to write .env}:${IMAGE_TAG:?run deploy.sh to write .env}
+    command: ["node", "dist/cli/migrate.js"]
+    environment:
+      APP_ENV: ${APP_ENV:?run deploy.sh to write .env}
+      LOG_LEVEL: ${LOG_LEVEL:-}
+      MIGRATOR_DATABASE_URL: ${MIGRATOR_DATABASE_URL:?run deploy.sh to write .env}
+    healthcheck:
+      disable: true
+    depends_on:
+      db:
+        condition: service_healthy
+    logging:
+      driver: awslogs
+      options:
+        <<: *awslogs
+        tag: "migrate/{{.ID}}"
+
+  app:
+    image: ${ECR_REPOSITORY_URL:?run deploy.sh to write .env}:${IMAGE_TAG:?run deploy.sh to write .env}
+    restart: unless-stopped
+    stop_grace_period: 30s
+    environment:
+      APP_ENV: ${APP_ENV:?run deploy.sh to write .env}
+      LOG_LEVEL: ${LOG_LEVEL:-}
+      HTTP_PORT: ${HTTP_PORT:-}
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:?run deploy.sh to write .env}
+      DATABASE_URL: ${DATABASE_URL:?run deploy.sh to write .env}
+      DB_MAX_CONNS: ${DB_MAX_CONNS:-}
+      TOKEN_SIGNING_KEY: ${TOKEN_SIGNING_KEY:?run deploy.sh to write .env}
+      ACCESS_TOKEN_TTL: ${ACCESS_TOKEN_TTL:-}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    logging:
+      driver: awslogs
+      options:
+        <<: *awslogs
+        tag: "app/{{.ID}}"
+
+  caddy:
+    image: caddy:2.11.9-alpine
+    restart: unless-stopped
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:?run deploy.sh to write .env}
+    labels:
+      # A changed Caddyfile changes this label, so up -d recreates caddy and it mounts the new file.
+      pos.caddyfile-sha256: ${CADDYFILE_SHA256:-}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - /data/caddy:/data
+    logging:
+      driver: awslogs
+      options:
+        <<: *awslogs
+        tag: "caddy/{{.ID}}"
