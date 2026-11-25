@@ -41,10 +41,12 @@ The service enforces every rule first; the database refuses anything that slips 
 
 ## Migrations
 
-- Plain SQL files in `api/migrations/`, numbered, applied in order by `npm run migrate` as `migrator`.
+- Plain SQL files in `api/migrations/`, numbered (`NNNN_name.sql`), applied in order by `npm run migrate` as `migrator`, with node-pg-migrate.
+- Each file runs in its own transaction; the log of applied files is `pos_meta.pos_migrations`, which `pos_app` cannot read.
+- The one exception to plain SQL: a migration that cannot run in a transaction (`CREATE INDEX CONCURRENTLY`) is a `NNNN_name.ts` file that calls `pgm.noTransaction()`, then `pgm.sql(...)`.
 - Never edit a migration that has been applied anywhere; add a new one.
 - Expand and contract for breaking changes: add the new shape, move readers and writers, then remove the old one in a later migration.
-- New indexes on tables that already hold data use `CREATE INDEX CONCURRENTLY` in their own migration.
+- New indexes on tables that already hold data use `CREATE INDEX CONCURRENTLY` in their own `.ts` migration (above).
 - Each migration grants what `pos_app` needs on new tables.
 
 ## pgtyped
@@ -62,5 +64,5 @@ The service enforces every rule first; the database refuses anything that slips 
 
 - Take `tx` or the pool as the first argument; never open a transaction.
 - Map every row to a model with a hand-written `toX(row)` function next to the repository.
-- Pass database errors through `mapPgError`; translate a foreign-key violation on delete ("still referenced") into the area's own error.
+- Pass database errors through `mapPgError`; translate a restrict violation (`23001`, a delete blocked by `ON DELETE RESTRICT`, "still referenced"; not `23503`) into the area's own error.
 - Return `null` for "not found" on single reads; the service decides whether that is an error.

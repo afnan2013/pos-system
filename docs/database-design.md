@@ -212,17 +212,25 @@ The API never connects as the superuser, and nothing in the repository does exce
 `deploy/initdb/01-roles.sh` runs from `/docker-entrypoint-initdb.d`, so Postgres runs it only when the data directory is empty.
 The same script is mounted by the local `docker-compose.yml` and by the testcontainers helper, so local runs, tests and production build the roles the same way.
 Passwords come from the environment (`MIGRATOR_PASSWORD`, `APP_DB_PASSWORD`) and are read with `\getenv`, so they never appear on a command line.
+The script is bash: it stops with an error before `psql` starts if `POSTGRES_USER`, `POSTGRES_DB` or either password is unset, then runs `psql --no-psqlrc --single-transaction -v ON_ERROR_STOP=1`, so the roles are created completely or not at all.
 
 ```sql
+-- Keeps the password-bearing statements out of the server log and psql's error excerpt.
+SET log_min_error_statement = panic;
+\set VERBOSITY terse
+
 \getenv migrator_password MIGRATOR_PASSWORD
 \getenv app_password APP_DB_PASSWORD
 
 CREATE ROLE migrator LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE PASSWORD :'migrator_password';
 CREATE ROLE pos_app  LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE PASSWORD :'app_password';
 
-REVOKE ALL ON DATABASE pos FROM PUBLIC;
-GRANT CONNECT ON DATABASE pos TO migrator, pos_app;
-GRANT CREATE ON DATABASE pos TO migrator;
+\unset migrator_password
+\unset app_password
+
+REVOKE ALL ON DATABASE :"DBNAME" FROM PUBLIC;
+GRANT CONNECT ON DATABASE :"DBNAME" TO migrator, pos_app;
+GRANT CREATE ON DATABASE :"DBNAME" TO migrator;
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 
 CREATE SCHEMA pos AUTHORIZATION migrator;
@@ -240,7 +248,10 @@ ALTER ROLE migrator SET lock_timeout = '5s';
 ```
 
 - `POSTGRES_DB=pos` makes the container create the `pos` database before the script runs.
-- `GRANT CREATE ON DATABASE` lets `migrator` create the migration runner's own bookkeeping schema, `pos_migrations` (proposed), which `pos_app` cannot see.
+  The grants use psql's built-in `:"DBNAME"` (the current database) instead of a fixed `pos`, so a test container with another database name works too.
+- `SET log_min_error_statement = panic` and `\set VERBOSITY terse` mean a failing statement that holds a password reaches neither the server log nor psql's `LINE 1:` excerpt; `\unset` drops both password variables once used.
+- Run again on a database that already has the roles, it fails at the first `CREATE ROLE` without printing a password.
+- `GRANT CREATE ON DATABASE` lets `migrator` create the migration runner's own schema, `pos_meta`, which holds the log table `pos_migrations`; `pos_app` has no rights on it.
 - `REVOKE CREATE ON SCHEMA public` is already the default since Postgres 15; it stays in the script as a statement of intent.
 - The session settings are explained in [How the API connects](#how-the-api-connects).
 
@@ -264,7 +275,9 @@ The resulting access for `pos_app`:
 | `permissions` | `SELECT` | Only the `migrate` CLI writes the catalog, as `migrator`. |
 | `sales`, `sale_items`, `stock_movements` | `SELECT, INSERT` | Frozen history and an append-only audit trail; the API cannot change or remove them even with a bug (proposed). |
 
-A test in `src/platform/db` connects as `pos_app` and pins these rights: it must fail to `UPDATE pos.sales`, to `DELETE FROM pos.stock_movements`, to write `pos.permissions` and to run any DDL (proposed).
+A test in `api/test/platform/db/roles.test.ts` connects as `pos_app` and pins these rights.
+Today it checks what the init script gives: data access to tables `migrator` creates, no `CREATE` in `pos`, in `public` or on the database, and the session timeouts; `test/cli/migrate.test.ts` checks that `pos_app` cannot read `pos_meta`.
+With the tables, it must also fail to `UPDATE pos.sales`, to `DELETE FROM pos.stock_movements`, to write `pos.permissions` and to run any DDL (proposed).
 
 ## Tables
 
@@ -1036,16 +1049,34 @@ This exact scenario is a required integration test (see `.claude/rules/sales.md`
 All schema changes are plain SQL files in `api/migrations/`, applied in order by `npm run migrate` as `migrator`, before the new app starts.
 In Compose the `migrate` service runs first and `app` starts only if it exits successfully, so a failed migration never starts new code.
 
+**The runner is node-pg-migrate 9.0.0**, called through its programmatic `runner` from `src/cli/run-migrations.ts`, with these options:
+
+| Option | Value | Effect |
+| --- | --- | --- |
+| `migrationsSchema`, `migrationsTable` | `pos_meta`, `pos_migrations` | The log of applied files lives in its own schema, created on the first run (`createMigrationsSchema: true`) and owned by `migrator`; `pos_app` cannot read it. |
+| `schema` | `pos` | Sets `search_path` to `pos` while migrating. |
+| `singleTransaction` | `false` | Each file runs in its own transaction, instead of the library's default of one transaction for the whole run. |
+| `checkOrder` | `true` | A new file numbered before one already applied stops the run. |
+| advisory lock | on (library default, `advisoryLockMode` `fail`) | A second `migrate` started at the same time exits 1 at once instead of waiting. |
+
+- The log table is the library's own shape: `id serial`, `name varchar(255)`, `run_on timestamp` (without time zone); a migration's name is its file name without the extension.
+- The CLI logs `migration applied` with the file name when the next file starts or the run ends (the library announces a file before running it and has no "done" event), then `migrations complete`.
+  A failure is logged once, at `error`, with the file that failed.
+- `migrations/` holds a `.gitkeep` until the first migration, because the runner fails on a missing folder; files starting with `.` are skipped.
+
 - **Naming (proposed):** `NNNN_short_description.sql`, four digits, for example `0001_outlets_and_menu.sql`, `0002_access_control.sql`, `0003_inventory_and_sales.sql`.
+  node-pg-migrate accepts any number of digits, so four is our rule, not the library's.
   Each feature spec decides its own files.
 - **Forward only (proposed):** no down migrations.
   A mistake is fixed by a new migration, which is the same rule as never editing an applied file.
 - **Never edit a migration that has been applied anywhere,** including a teammate's database or CI; add a new one.
-- **Each file runs in one transaction**, so it applies completely or not at all.
-  The exception is `CREATE INDEX CONCURRENTLY`, which cannot run in a transaction and goes in a file of its own, marked the way the chosen runner requires.
+- **Each file runs in one transaction**, so it applies completely or not at all; files before a failing one stay applied.
+  The exception is `CREATE INDEX CONCURRENTLY`, which cannot run in a transaction.
+  node-pg-migrate has no marker for that in a `.sql` file, so such a migration is a `NNNN_name.ts` file of its own that calls `pgm.noTransaction()` and then `pgm.sql(...)`; the runner logs a warning that it is not wrapped in a transaction.
+  The runner loads `.ts` files itself (through jiti, its own dependency), so they run in the production image with no build step.
+  When the first `.ts` migration lands, add `migrations/` to `include` in `api/tsconfig.json`, so typecheck and ESLint cover it.
 - **Each migration ends with the grants** for the tables it creates (see [Grants in the migrations](#grants-in-the-migrations)).
 - **Every new index states which query it serves**, in the commit message of its migration.
-- **The runner** is chosen in the foundation spec; it must support plain SQL files, a no-transaction mode per file, and keeping its bookkeeping in `pos_migrations`.
 - **After the migrations**, the same CLI syncs the permission catalog (see `permissions`).
 
 ### Expand and contract
@@ -1085,7 +1116,8 @@ After every migration:
    A renamed or removed column breaks the query that used it, at compile time.
 4. Commit the migration, the changed `.sql` files and the regenerated `.queries.ts` files together.
 
-CI starts a clean Postgres 18 (a `postgres:18` service container that exists only for this check), runs the migrations, regenerates, and fails if any generated file differs from the commit.
+CI starts a clean Postgres 18 (a `postgres:18.7-alpine` service container that exists only for this check), creates the roles with `01-roles.sh`, runs the migrations, regenerates, and fails if any generated file differs from the commit.
+The same `postgres:18.7-alpine` tag is pinned in both local compose files, the production compose file and the testcontainers helper, and a CI job fails if any of them differs.
 Tests do not use that service container: they start their own Postgres with testcontainers, in CI as locally.
 Generated files are never edited by hand.
 
@@ -1093,6 +1125,8 @@ Type settings that keep TypeScript and the database in agreement (proposed):
 
 - `int8` (`bigint`) maps to `number` in pgtyped's `typesOverrides`, and the pool registers a matching `pg` type parser that converts `int8` to a number and throws if a value is beyond `Number.MAX_SAFE_INTEGER` (about 9 x 10^15 minor units, far beyond any real total).
   Without the parser, `pg` returns `bigint` as a string at run time, whatever the generated type says.
+  The parser covers `int8` only; an `int8[]` still arrives as an array of strings, so the first query that returns one adds an array parser.
+  `db:generate` connects as `pos_app` through `DATABASE_URL` (pgtyped reads `PGURI` first, and `PG*` variables override parts of the URL); describing a statement needs no table rights.
 - Aggregates return `numeric` or `bigint`; queries cast sums to `bigint` explicitly.
 - A computed column that is never null gets the `!` hint in its alias (`AS "effective_price_minor!"`), so its type is not `number | null`.
 - Rows keep their `snake_case` names; the repository's `toX(row)` function maps them to camelCase models.
@@ -1131,7 +1165,8 @@ Set on the role by the init script, so every connection gets them without any co
 | `23001` | restrict violation: a delete blocked by `ON DELETE RESTRICT`, such as a role still in use or unassigning a sold item | `conflict` (409) |
 | `23514` | check violation | `validation` (400) with a generic title; only the constraint name is logged |
 | `40001`, `40P01` | serialization failure, deadlock | `unavailable` (503); a retry is safe because the transaction rolled back |
-| `57014`, `55P03`, `25P03`, `53300`, connection errors | statement timeout, lock timeout, idle transaction timeout, too many connections, the database unreachable | `unavailable` (503) |
+| `57014`, `55P03`, `25P03`, `53300` | statement timeout, lock timeout, idle transaction timeout, too many connections | `unavailable` (503) |
+| `57P01`-`57P03`, class `08`, connection errors | the server shutting down or starting, a broken connection, the database unreachable | `unavailable` (503) |
 | anything else | | `unexpected` (500) |
 
 Repositories may still translate a specific violation into a named area error before `mapPgError`, such as "role in use" for a `23001` on `users_role_id_role_scope_fkey`.
@@ -1142,6 +1177,7 @@ Postgres raises `23001`, not `23503`, for `RESTRICT`, which was checked against 
 `withTx(db, async (tx) => ...)` checks out one client, runs `BEGIN`, runs the callback, and `COMMIT`s.
 On any throw it runs `ROLLBACK`, bounded by a 5-second timeout so a dead connection cannot hang the request, and rethrows.
 If the rollback itself fails, the client is released as broken (`client.release(err)`), so the pool destroys it instead of handing a connection in an unknown state to the next request.
+While it holds the client, `withTx` listens for the client's `'error'` event; a connection lost mid-transaction then releases the client as broken instead of crashing the process with an unhandled error.
 
 ### Connection budget on a `t4g.small`
 
@@ -1153,7 +1189,7 @@ If the rollback itself fails, the client is released as broken (`client.release(
 | Operator `psql` over SSM | `migrator` | 1-2 |
 | **Peak total** | | **about 15** |
 
-Postgres settings for 2 GiB of memory shared with the app and Caddy (proposed, passed as `-c` flags in the production Compose file): `max_connections = 40`, `shared_buffers = 256MB`, `effective_cache_size = 768MB`, `work_mem = 8MB`, `maintenance_work_mem = 64MB`.
+Postgres settings for 2 GiB of memory shared with the app and Caddy (proposed, passed as `-c` flags in the production Compose file; not set yet, so Postgres runs with the image defaults): `max_connections = 40`, `shared_buffers = 256MB`, `effective_cache_size = 768MB`, `work_mem = 8MB`, `maintenance_work_mem = 64MB`.
 `max_connections` stays well above the budget but far below the default 100, because each connection costs memory the small host does not have.
 
 ## Backups, retention and seed data
