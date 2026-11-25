@@ -1,0 +1,198 @@
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Commit of main to deploy (40 lowercase hex characters); leave empty for the tip of main
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    # The OIDC trust policy is the real boundary; this only stops other branches early.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      ECR_REPOSITORY_URL: ${{ vars.ECR_REPOSITORY_URL }}
+      EC2_INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check the repository variables
+        run: |
+          set -u
+          [[ $AWS_REGION =~ ^[a-z]{2}(-[a-z]+)+-[0-9]+$ ]] ||
+            { echo "::error::Repository variable AWS_REGION is missing or not a region name."; exit 1; }
+          [[ $EC2_INSTANCE_ID =~ ^i-[0-9a-f]{8,17}$ ]] ||
+            { echo "::error::Repository variable EC2_INSTANCE_ID is missing or not an instance ID."; exit 1; }
+          [[ $ECR_REPOSITORY_URL =~ ^[0-9]{12}\.dkr\.ecr\.([a-z0-9-]+)\.amazonaws\.com/[a-z0-9]+([._/-][a-z0-9]+)*$ ]] ||
+            { echo "::error::Repository variable ECR_REPOSITORY_URL is missing or not an ECR repository URL."; exit 1; }
+          [[ ${BASH_REMATCH[1]} == "$AWS_REGION" ]] ||
+            { echo "::error::ECR_REPOSITORY_URL is in ${BASH_REMATCH[1]}, but AWS_REGION is $AWS_REGION."; exit 1; }
+
+      - name: Resolve the commit to deploy
+        id: resolve
+        env:
+          INPUT_SHA: ${{ inputs.sha }}
+        run: |
+          set -u
+          if [[ -z $INPUT_SHA ]]; then
+            sha=$GITHUB_SHA
+            rollback=false
+          else
+            [[ $INPUT_SHA =~ ^[0-9a-f]{40}$ ]] ||
+              { echo "::error::The sha input must be a full 40-character lowercase commit SHA."; exit 1; }
+            sha=$INPUT_SHA
+            rollback=$([[ $sha == "$GITHUB_SHA" ]] && echo false || echo true)
+          fi
+          git cat-file -e "$sha^{commit}" 2>/dev/null ||
+            { echo "::error::Commit $sha is not in this repository."; exit 1; }
+          git merge-base --is-ancestor "$sha" origin/main ||
+            { echo "::error::Commit $sha is not on main."; exit 1; }
+          echo "Deploying $sha (rollback: $rollback)"
+          {
+            echo "sha=$sha"
+            echo "rollback=$rollback"
+          } >>"$GITHUB_OUTPUT"
+
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Check whether the image is already in ECR
+        id: image
+        env:
+          SHA: ${{ steps.resolve.outputs.sha }}
+          ROLLBACK: ${{ steps.resolve.outputs.rollback }}
+        run: |
+          set -u
+          result=$(aws ecr batch-get-image --region "$AWS_REGION" \
+            --repository-name "${ECR_REPOSITORY_URL#*/}" --image-ids "imageTag=$SHA" \
+            --query '[length(images), failures[0].failureCode]' --output text)
+          read -r count failure <<<"$result"
+          if [[ $count -gt 0 ]]; then
+            echo "Image $SHA is already in ECR; skipping the build."
+            echo "exists=true" >>"$GITHUB_OUTPUT"
+          elif [[ $failure == ImageNotFound ]]; then
+            if [[ $ROLLBACK == true ]]; then
+              echo "::error::Image $SHA is not in ECR, and a rollback never builds. ECR keeps only the last 10 images; pick a newer commit."
+              exit 1
+            fi
+            echo "Image $SHA is not in ECR; building it."
+            echo "exists=false" >>"$GITHUB_OUTPUT"
+          else
+            echo "::error::Could not tell whether image $SHA is in ECR (failure code: $failure)."
+            exit 1
+          fi
+
+      - if: steps.image.outputs.exists == 'false'
+        uses: aws-actions/amazon-ecr-login@7290e214a610b32bc0eef81748948b6d466a8783 # v2.2.0
+
+      - name: Build and push the image
+        if: steps.image.outputs.exists == 'false'
+        env:
+          SHA: ${{ steps.resolve.outputs.sha }}
+        run: |
+          set -u
+          [[ $(git rev-parse HEAD) == "$SHA" ]] ||
+            { echo "::error::The checkout is $(git rev-parse HEAD), not $SHA."; exit 1; }
+          image="$ECR_REPOSITORY_URL:$SHA"
+          docker build --target runtime --label "org.opencontainers.image.revision=$SHA" --tag "$image" .
+          docker push "$image"
+
+      - name: Run deploy.sh on the server
+        id: send
+        env:
+          SHA: ${{ steps.resolve.outputs.sha }}
+        run: |
+          set -u
+          params="$RUNNER_TEMP/ssm-parameters.json"
+          # The server's /bin/sh is dash, so the command avoids bash-only options such as pipefail.
+          jq -n \
+            --arg region "$AWS_REGION" \
+            --arg registry "${ECR_REPOSITORY_URL%%/*}" \
+            --arg image "$ECR_REPOSITORY_URL:$SHA" \
+            --arg sha "$SHA" \
+            '{
+              executionTimeout: ["540"],
+              commands: [
+                "set -eu",
+                "export AWS_REGION=\($region)",
+                "aws ecr get-login-password --region \($region) | docker login --username AWS --password-stdin \($registry)",
+                "docker pull \($image)",
+                "mkdir -p /opt/pos",
+                "cid=$(docker create \($image))",
+                "docker cp \"$cid:/app/deploy/.\" /opt/pos/ || { docker rm \"$cid\" >/dev/null; exit 1; }",
+                "docker rm \"$cid\" >/dev/null",
+                "bash /opt/pos/deploy.sh \($sha)"
+              ]
+            }' >"$params"
+          command_id=$(aws ssm send-command --region "$AWS_REGION" \
+            --instance-ids "$EC2_INSTANCE_ID" \
+            --document-name AWS-RunShellScript \
+            --timeout-seconds 900 \
+            --comment "Deploy $SHA" \
+            --parameters "file://$params" \
+            --query Command.CommandId --output text)
+          echo "SSM command $command_id sent to $EC2_INSTANCE_ID"
+          echo "command-id=$command_id" >>"$GITHUB_OUTPUT"
+
+      - name: Wait for the deploy to finish
+        env:
+          COMMAND_ID: ${{ steps.send.outputs.command-id }}
+        run: |
+          set -u
+          invocation() {
+            aws ssm get-command-invocation --region "$AWS_REGION" \
+              --command-id "$COMMAND_ID" --instance-id "$EC2_INSTANCE_ID" "$@"
+          }
+          status=Pending
+          deadline=$((SECONDS + 600))
+          while ((SECONDS < deadline)); do
+            sleep 10
+            # Right after send-command the invocation may not exist yet; keep polling.
+            status=$(invocation --query Status --output text 2>/dev/null) || status=Pending
+            echo "Status: $status"
+            case $status in
+              Success | Failed | Cancelled | TimedOut) break ;;
+            esac
+          done
+          if ! details=$(invocation --output json); then
+            echo "::error::Could not read SSM command $COMMAND_ID (last status: $status)."
+            exit 1
+          fi
+          echo "::group::Server output"
+          jq -r '.StandardOutputContent' <<<"$details"
+          echo "::endgroup::"
+          echo "::group::Server errors"
+          jq -r '.StandardErrorContent' <<<"$details"
+          echo "::endgroup::"
+          jq -r '"Status: \(.Status) (\(.StatusDetails)), exit code \(.ResponseCode)"' <<<"$details"
+          final=$(jq -r '.Status' <<<"$details")
+          if [[ $final != Success ]]; then
+            if [[ $final == Pending || $final == InProgress || $final == Delayed ]]; then
+              echo "::error::The deploy did not finish within 10 minutes (status $final); check the server before deploying again."
+            else
+              echo "::error::The deploy failed on the server (status $final)."
+            fi
+            exit 1
+          fi
