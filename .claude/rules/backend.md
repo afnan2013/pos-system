@@ -20,13 +20,13 @@ api/
     platform/
       config/             loadBase, loadDatabase, loadHttp, loadTokenSettings; Secret
       logger/             createLogger (pino JSON to stdout), request context (AsyncLocalStorage), logger()
-      errors/             AppError, kinds, constructors, kindOf
-      http/               requestId, requestLog, errorHandler (writeProblem), validate, respond, notFound
+      errors/             AppError, kinds, constructors, kindOf, isError, withTitle
+      http/               requestId, securityHeaders, requestLog, jsonBody, errorHandler (writeProblem), validate, respond, notFound, methodNotAllowed
       db/                 createPool, withTx, mapPgError, Db / Tx types
-      auth/               token signer (ES256), authenticate, requirePermission, Principal, outlet scope helper
+      auth/               token signer (ES256), authenticate, requirePermission, Principal, assertOutletAccess
       health/             GET /healthz, GET /readyz (outside /api)
     modules/<area>/       auth, roles, users, outlets, menu, inventory, sales, reports
-    cli/                  migrate.ts (migrations + permission sync), seed.ts
+    cli/                  migrate.ts (entry) + run-migrations.ts (migrations, then the permission sync), seed.ts
   migrations/             plain SQL, numbered, never edited once applied
 ```
 
@@ -42,7 +42,7 @@ Each module:
 | `<thing>.repository.ts` | calls pgtyped queries, maps rows to models, maps database errors |
 | `<thing>.sql` -> `<thing>.queries.ts` | pgtyped source and its generated output (generated file never edited) |
 | `dependencies.ts` | the small interfaces the service needs, named after the real thing |
-| `<thing>.test.ts` | co-located tests |
+| `<thing>.test.ts` | lives in `api/test/modules/<area>/`, mirroring this folder, never in the module folder itself |
 
 ## Layers
 
@@ -70,7 +70,7 @@ Dependencies point down only.
 
 - `AppError` carries a `kind`: `validation` 400, `unauthorized` 401, `forbidden` 403, `not_found` 404, `conflict` 409, `invalid_reference` 400, `too_large` 413, `rate_limited` 429, `unavailable` 503, `canceled` 499, `unexpected` 500.
 - Area errors are declared once in `<thing>.ts` (`export const ErrInsufficientStock = conflict('Not enough stock')`) and checked by identity or `kindOf`.
-- `mapPgError`: 23505 -> conflict, 23503 -> invalid_reference, 23001 (restrict violation: still referenced) -> conflict, 23514 -> validation with a generic title (constraint name only in the log), 40001 / 40P01 (serialization failure, deadlock) and 57014 / 55P03 / 25P03 / 53300 and connection errors -> unavailable; anything else stays unexpected.
+- `mapPgError`: 23505 -> conflict, 23503 -> invalid_reference, 23001 (restrict violation: still referenced) -> conflict, 23514 -> validation with a generic title (constraint name only in the log), 40001 / 40P01 (serialization failure, deadlock), 57014 / 55P03 / 25P03 / 53300, 57P01-57P03 (server shutting down or starting), SQLSTATE class 08 and connection errors -> unavailable; anything else is wrapped as unexpected, so it always returns an `AppError`.
 - An area error that must name the item uses `withTitle(ErrInsufficientStock, ...)`; callers match it with `isError(err, ErrInsufficientStock)`, which walks the `cause` chain.
 - **`errorHandler` is the only code that writes an error body**: RFC 7807 `application/problem+json` with `type`, `title`, `status`, `instance`, `requestId`, and `errors` only for validation; `Cache-Control: no-store`; 500s never leak internals.
 - If headers were already sent, `errorHandler` logs and destroys the socket instead of writing a body.
@@ -90,7 +90,7 @@ Dependencies point down only.
 
 ## Logging
 
-- pino, JSON to stdout, level from `LOG_LEVEL` (`debug` only locally).
+- pino, JSON to stdout, level from `LOG_LEVEL`; `loadBase` refuses `debug` when `APP_ENV=prod`.
 - Code logs through `logger()` from the request context, never `console.log`.
 - `error` level only for unexpected failures, logged **once**, in `errorHandler` (with the cause chain and stack). `unavailable` logs at warn, `canceled` at info. Never log an error and also rethrow it.
 - Never logged: request or response bodies, passwords, tokens, cookies, `Authorization` headers. IDs only.
@@ -101,7 +101,8 @@ Dependencies point down only.
 - A loader reports **every** bad setting in one error, and the process exits before listening.
 - `APP_ENV` (`local`, `prod`) is required with no default.
 - Secrets are wrapped in `Secret`, which prints `xxxxx` in logs, `JSON.stringify` and `util.inspect`; call `.reveal()` only where the value is used.
-- No `process.env` outside `platform/config` and `main.ts`.
+- `TOKEN_SIGNING_KEY` is loaded at startup; `.env.example` holds a public development key, which startup refuses when `APP_ENV=prod`; tests generate their own keys.
+- No `process.env` outside `platform/config`, `main.ts` and the `cli/` entry files (`cli/migrate.ts`), which are entry points like `main.ts`.
 
 ## Validation
 
@@ -141,6 +142,7 @@ Dependencies point down only.
 
 ## Testing
 
+- Tests live in `api/test/`, mirroring `src/` (`test/platform/db/with-tx.test.ts` tests `src/platform/db/with-tx.ts`); shared helpers sit in `test/support/`; `src/` holds only shipped code.
 - vitest for unit tests; supertest for routes; integration tests against real Postgres via testcontainers, locally and in CI (required for anything touching transactions, constraints or migrations).
 - No mocking the database in repository tests; fakes only for outside services.
 - Every use case has a happy-path test and a test per business rule it enforces.
