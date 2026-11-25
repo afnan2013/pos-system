@@ -43,16 +43,22 @@ Build to that plan; if a file needs to differ, update the plan in the same chang
 - Every compose service names its variables in its own `environment:` block; no service loads `.env` whole.
 - Postgres healthchecks use `pg_isready -h 127.0.0.1` (TCP), because during init the server listens only on its socket.
 - The `Caddyfile` names Let's Encrypt as its only certificate issuer, because the CAA record allows no other, and adds `Strict-Transport-Security`; the app sets the other security headers itself.
+  It proxies to `app:{$HTTP_PORT:3000}`, so the upstream follows the app's port.
 - `deploy/docker-compose.prod.yml` (project `pos`) is for the server: ECR image by commit SHA, Caddy with `/data/caddy` at `/data`, Postgres data on `/data/postgres` at `/var/lib/postgresql`, `awslogs` logging to `${LOG_GROUP}` in `${AWS_REGION}`, no port published except Caddy's 80 and 443.
 - Start order is enforced: `db` healthy, then `migrate` completes successfully, then `app` starts.
+- Every compose file forwards `SHUTDOWN_TIMEOUT` (at most `1m`, default `10s`) to the app, and gives it `stop_grace_period: 30s`; keep the grace period longer than the timeout.
 
 ## Deploy
 
 - Deploys start only by hand (`deploy.yml`, `workflow_dispatch` on `main`); nothing deploys on push or merge.
 - The workflow builds the ARM image with `deploy/` inside it at `/app/deploy` and pushes it tagged with the commit SHA (skipped when ECR already has that tag), then over SSM pulls that image, copies `deploy/` out with `docker create` and `docker cp`, and runs `deploy.sh <sha>`; there is no deploy bucket.
+- `deploy.sh` reads SSM under `/<ecr-repo-name>/prod`, the prefix taken from the `ECR_REPOSITORY_URL` the SSM command exports (Terraform names both after `project_name`), and stops if SSM's own `ECR_REPOSITORY_URL` differs.
 - `deploy.sh` refuses to run if `/data` is not mounted, writes `.env` with mode 600 from every SSM parameter (values single-quoted) plus `IMAGE_TAG` and the two database URLs, pulls before `up -d` without stopping services first, fails the job if `/readyz` does not answer within 2 minutes, then removes old POS images except the current and previous ones.
 - Rollback is the deploy workflow with an older SHA of `main`, one of the last 10 images ECR keeps; image tags are immutable.
   It never rolls back the schema: migrations only go forward.
+  Nothing rolls back automatically: a deploy whose `/readyz` never answers fails the job and stays in place until someone redeploys the previous SHA.
+- Database passwords rotate by hand: `01-roles.sh` runs only on an empty data folder (steps in `docs/infrastructure.md` section 7).
+- `main` is not branch-protected, by the user's decision while they are the only developer; the deploy role is root on the host, so protect `main` before anyone else gets write access.
 - SSM commands carry only the SHA and checked repository variables, never secrets, and are POSIX `sh`.
 - Shell scripts start with `set -euo pipefail` and pass `shellcheck`.
 

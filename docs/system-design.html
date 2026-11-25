@@ -356,7 +356,7 @@ footer { color: var(--muted); font-size: 0.88rem; border-top: 1px solid var(--li
 
           <rect class="n" x="24" y="196" width="352" height="48" rx="8"/>
           <text class="t" x="200" y="217" text-anchor="middle">caddy · :80 :443</text>
-          <text class="ts" x="200" y="235" text-anchor="middle">automatic HTTPS · proxy to app:3000</text>
+          <text class="ts" x="200" y="235" text-anchor="middle">automatic HTTPS · proxy to app:HTTP_PORT</text>
 
           <path class="edge" d="M200,244 L200,270" marker-end="url(#arr)"/>
 
@@ -422,7 +422,7 @@ footer { color: var(--muted); font-size: 0.88rem; border-top: 1px solid var(--li
         <div>
           <ol class="notes">
             <li><b>Address.</b> Route53 points <code>pos.&lt;domain&gt;</code> at an Elastic IP. The IP stays the same if the server is ever replaced.</li>
-            <li><b>Caddy</b> is the only container with open ports (80 and 443). It gets and renews the Let's Encrypt certificate by itself, adds <code>Strict-Transport-Security</code> <span class="prop">(proposed)</span>, and forwards every request to <code>app:3000</code>.</li>
+            <li><b>Caddy</b> is the only container with open ports (80 and 443). It gets and renews the Let's Encrypt certificate by itself, adds <code>Strict-Transport-Security</code> <span class="prop">(proposed)</span>, and forwards every request to the app on <code>HTTP_PORT</code> (<code>app:3000</code> by default).</li>
             <li><b>The app container</b> runs Express. It answers <code>/api/v1/*</code>, <code>/healthz</code> and <code>/readyz</code>, and serves the built React app for every other path, so the browser and the API share one origin and need no CORS (cross-origin resource sharing) setup.</li>
             <li><b>Postgres</b> runs as a container on the same server, reachable only on the internal Docker network. The API connects as <code>pos_app</code> (data access only); <code>migrate</code> runs first as <code>migrator</code>, and the app starts only if it succeeds.</li>
             <li><b>The data volume</b> is a separate EBS (Elastic Block Store) disk mounted at <code>/data</code>. Replacing the server never loses data or the certificate. There are no backups, because this is a test deployment: losing the volume loses the data.</li>
@@ -517,7 +517,7 @@ footer { color: var(--muted); font-size: 0.88rem; border-top: 1px solid var(--li
       <article>
         <span class="pick">Edge</span>
         <h3>Caddy, not nginx or a managed gateway</h3>
-        <p>Caddy gets and renews the HTTPS certificate on its own. The whole config is a few lines: the domain, compression, one <code>header</code> line for <code>Strict-Transport-Security</code> <span class="prop">(proposed)</span> and <code>reverse_proxy app:3000</code>. No certbot, no cron, no extra AWS service.</p>
+        <p>Caddy gets and renews the HTTPS certificate on its own. The whole config is a few lines: the domain, compression, one <code>header</code> line for <code>Strict-Transport-Security</code> <span class="prop">(proposed)</span> and <code>reverse_proxy app:{$HTTP_PORT:3000}</code>. No certbot, no cron, no extra AWS service.</p>
         <p class="alt"><b>Trade-off:</b> no edge rate limiting or web application firewall. Those belong to the scaling plan, not this build.</p>
       </article>
       <article>
@@ -574,7 +574,7 @@ footer { color: var(--muted); font-size: 0.88rem; border-top: 1px solid var(--li
           <li><div class="step-head"><span class="lane browser">Browser</span><b>The sign-in form posts email and password</b></div>
             <p>To <code>/api/v1/auth/login</code> on the same origin.</p></li>
           <li><div class="step-head"><span class="lane edge">Caddy</span><b>HTTPS ends here</b></div>
-            <p>Caddy forwards the request to <code>app:3000</code>.</p></li>
+            <p>Caddy forwards the request to the app on <code>HTTP_PORT</code> (<code>app:3000</code> by default).</p></li>
           <li><div class="step-head"><span class="lane http">Express</span><b>Request ID, request log, JSON body</b></div>
             <p>No <code>authenticate</code> on this route. The controller parses the body with a strict zod schema; a bad body is a 400 problem with field errors.</p></li>
           <li><div class="step-head"><span class="lane service">Service</span><span class="lane db">Postgres</span><b>Find the user and check the password</b></div>

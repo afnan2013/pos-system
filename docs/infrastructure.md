@@ -36,7 +36,7 @@ Browser
 Route53 A record ──► Elastic IP ──► EC2 t4g.small (Ubuntu 24.04, ARM)
                                      │
                                      │ docker compose (deploy/docker-compose.prod.yml)
-                                     ├─ caddy    :80 :443  automatic HTTPS, reverse proxy to app:3000
+                                     ├─ caddy    :80 :443  automatic HTTPS, reverse proxy to app:HTTP_PORT (3000)
                                      ├─ app      :3000     Express: /api/* + the React build (internal only)
                                      ├─ migrate  one-shot  migrations + permission sync, then exits
                                      └─ db       :5432     postgres:18.7-alpine (internal only)
@@ -256,6 +256,11 @@ A job with an `environment:` would get a different subject, so `deploy.yml` sets
 
 GitHub Actions has no S3 permissions and no `ecr:DescribeImages`; the deploy workflow checks whether an image exists with `ecr:BatchGetImage`, which it already has.
 
+**Accepted risk: `main` is not branch-protected.**
+The user decided this on 2026-11-25: deploys start only by hand from the GitHub Actions page, and one developer has write access.
+The risk is real: the deploy role trusts any workflow run on `main` and can run commands as root on the server through SSM, so whoever can push to `main` controls the server and every secret on it.
+Revisit as soon as anyone else gets write access: add a ruleset on `main` that requires a pull request and blocks direct and force pushes.
+
 ### `ecr.tf`
 
 | Resource | Notes |
@@ -360,8 +365,10 @@ Shell scripts and the `Dockerfile` are always checked out with LF line endings, 
 - Project name `pos-system`.
 - `db`: `postgres:18.7-alpine` with the named volume `db-data` at `/var/lib/postgresql` (the Postgres 18 image keeps its data in a versioned folder under that path), `deploy/initdb` mounted read-only into `/docker-entrypoint-initdb.d`, and a `pg_isready -h 127.0.0.1` healthcheck.
   The healthcheck goes over TCP because, while the init scripts run, Postgres listens only on its socket and would look ready too early.
-- `migrate`: builds the image (tagged `pos-system:local`) and runs `node dist/cli/migrate.js` once `db` is healthy.
+- `migrate`: builds the `runtime` target of the image (tagged `pos-system:local`) and runs `node dist/cli/migrate.js` once `db` is healthy.
+  Naming the target means a later stage added to the `Dockerfile` can never become the image by accident.
 - `app`: the same image, published on `127.0.0.1:3000` only; starts once `migrate` exits successfully.
+  `stop_grace_period: 30s` gives the app's `SHUTDOWN_TIMEOUT` drain room before Docker kills it, the same as in production.
 - Every service lists its variables in its own `environment:` block, filled from `.env`; no service loads `.env` whole, so `app` never sees the migrator password and `migrate` never sees the token key.
 - The two database URLs are built in the compose file from the passwords.
   A missing required variable stops Compose with "copy .env.example to .env".
@@ -371,7 +378,7 @@ The Compose plugin (`docker compose`) and standalone `docker-compose` both work.
 
 ### `.env.example`
 
-Every value in it is public and for local use only: `APP_ENV=local`, `LOG_LEVEL`, `HTTP_PORT`, `PUBLIC_ORIGIN=http://localhost:3000`, `DB_MAX_CONNS`, `ACCESS_TOKEN_TTL`, three local database passwords, and a labelled development `TOKEN_SIGNING_KEY`.
+Every value in it is public and for local use only: `APP_ENV=local`, `LOG_LEVEL`, `HTTP_PORT`, `PUBLIC_ORIGIN=http://localhost:3000`, `SHUTDOWN_TIMEOUT=10s`, `DB_MAX_CONNS`, `ACCESS_TOKEN_TTL`, three local database passwords, and a labelled development `TOKEN_SIGNING_KEY`.
 The app refuses that key when `APP_ENV=prod`, so it can never sign production tokens.
 
 ### `docker-compose.dev.yml` (repository root, hot reload)
@@ -389,6 +396,7 @@ The app refuses that key when `APP_ENV=prod`, so it can never sign production to
 - `api` and `web` set `CHOKIDAR_USEPOLLING=true`.
   On macOS bind mounts (seen on Colima), rename-style saves from editors and git reach neither tsx nor Vite without polling; idle CPU stays under 1% per container.
 - `api` sets `PUBLIC_ORIGIN=http://localhost:5173`, because people open the Vite server in this stack.
+- `api` has `stop_grace_period: 30s`, like `app` in the other two compose files.
 
 ### `deploy/docker-compose.prod.yml`
 
@@ -398,8 +406,10 @@ Compose project `pos`, with the same start order as locally: `db` healthy, then 
   Nothing chowns `/data/postgres`: the Postgres entrypoint starts as root and creates and chowns its data folder itself.
 - `migrate`: `${ECR_REPOSITORY_URL}:${IMAGE_TAG}` running `node dist/cli/migrate.js`, with no restart policy.
 - `app`: the same image, `restart: unless-stopped`, and `stop_grace_period: 30s`, longer than the app's 10-second `SHUTDOWN_TIMEOUT` drain.
+  All three compose files forward `SHUTDOWN_TIMEOUT` to the app; the app refuses a value over `1m`, and any value at or above 30 seconds is cut short by the grace period, so raise both together.
 - `caddy`: `caddy:2.11.9-alpine`, `restart: unless-stopped`, publishing 80 and 443, with `./Caddyfile` mounted read-only and `/data/caddy` mounted at `/data`.
   The image sets `XDG_DATA_HOME=/data`, so certificates and the ACME (Automatic Certificate Management Environment) account key land on the data volume; `/config`, Caddy's autosaved copy of its config, is not kept.
+  It also receives `HTTP_PORT` (default `3000`), so the Caddyfile proxies to the port the app really listens on.
   A `pos.caddyfile-sha256` label is set from `CADDYFILE_SHA256`, which `deploy.sh` exports (it is not in `.env`), so a changed Caddyfile changes the label and `up -d` recreates `caddy` with the new file.
 - No service except `caddy` publishes a port.
 - Each service lists its variables in its own `environment:` block; a missing required value stops Compose with "run deploy.sh to write .env".
@@ -416,11 +426,12 @@ Compose project `pos`, with the same start order as locally: `db` healthy, then 
 	}
 	encode zstd gzip
 	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
-	reverse_proxy app:3000
+	reverse_proxy app:{$HTTP_PORT:3000}
 }
 ```
 
-`APP_DOMAIN` comes from the `.env` written by `deploy.sh`, which reads it from SSM.
+`APP_DOMAIN` and `HTTP_PORT` come from the `.env` written by `deploy.sh`, which reads them from SSM; `HTTP_PORT` falls back to `3000`.
+A different `HTTP_PORT` in SSM therefore moves the app and Caddy's upstream together, instead of passing the container health check and failing the `/readyz` poll with 502s.
 The `tls` block makes Let's Encrypt the only issuer, because the CAA record in `dns.tf` refuses any other, and Caddy's defaults can fall back to ZeroSSL.
 `caddy validate` and `caddy adapt` on `caddy:2.11.9-alpine` confirm that the Let's Encrypt directory is the only issuer and that the `zstd` encoder is present.
 The file is indented with tabs, as `caddy fmt` writes it.
@@ -442,7 +453,7 @@ The full script is in `docs/database-design.md` (Database roles).
 The deploy's SSM command gets `deploy.sh` onto the server before running it.
 It is POSIX `sh`, because the server's `/bin/sh` is dash, and it holds only the commit SHA and checked repository variables, never a secret, because SSM records command parameters.
 
-1. Exports `AWS_REGION`, logs Docker in to ECR with the instance role, and pulls `<ECR_REPOSITORY_URL>:<sha>`.
+1. Exports `AWS_REGION` and `ECR_REPOSITORY_URL`, logs Docker in to ECR with the instance role, and pulls `<ECR_REPOSITORY_URL>:<sha>`.
 2. Copies `/app/deploy` out of that image into `/opt/pos` with `docker create` and `docker cp`, then removes the stopped container.
 3. Runs `bash /opt/pos/deploy.sh <sha>`.
 
@@ -452,7 +463,9 @@ So the compose file, Caddyfile and scripts always match the image they deploy, a
 
 1. Fails fast unless `/data` is a mounted volume, so Postgres never writes to the root disk by mistake, and unless `/data/postgres`, `/data/caddy`, the compose file and the Caddyfile exist.
 2. Takes the region from `AWS_REGION`, or else from the instance metadata (IMDSv2).
-3. Reads every parameter under `/techzu-pos/prod` (override with `POS_SSM_PATH`), secrets and settings alike.
+3. Reads every parameter under `/<ecr-repo-name>/prod`, secrets and settings alike.
+   The prefix comes from the repository name at the end of `ECR_REPOSITORY_URL`, which the deploy command exports, because Terraform names both the repository and the SSM path after `project_name` (today `/techzu-pos/prod`).
+   It stops unless `ECR_REPOSITORY_URL` is a well-formed ECR URL, and again unless the `ECR_REPOSITORY_URL` stored in SSM is the same one.
    It refuses database passwords that are not letters and digits, because they go into URLs.
 4. Writes `/opt/pos/.env` with mode `600`, through a temporary file, naming each variable after the last part of the parameter name.
    Every value is in single quotes, so Compose never expands a `$` in it; a name that is not `[A-Z][A-Z0-9_]*`, or a value with a quote or a line break, stops the deploy.
@@ -463,6 +476,9 @@ So the compose file, Caddyfile and scripts always match the image they deploy, a
 8. Once `/readyz` answers, removes the local images of the ECR repository except the current tag and the one the app ran before, then runs `docker image prune -f`, so old releases do not fill the 12 GB root disk.
 
 It never prints a secret.
+
+If `/readyz` never answers, nothing rolls back by itself: the job fails, the new release stays in place, and its migrations stay applied.
+Roll back by hand: run the Deploy workflow again with the SHA of the last good deploy (the previous successful Deploy run shows it) as `sha`.
 
 Rollback is the Deploy workflow with an older commit of `main` as its `sha`; it works for any of the last 10 images kept in ECR.
 A rollback redeploys the older image, code and deploy files, but never the older schema: migrations only go forward.
@@ -563,7 +579,9 @@ A person opens Actions, then Deploy, then "Run workflow" on `main`.
 3. In `infra/terraform`: `terraform init`, `terraform plan`, review it, then `terraform apply`.
    This one apply creates the Elastic IP, the instance and the DNS record in the right order.
 4. Copy the four outputs into the GitHub repository variables listed in section 6.
-5. Protect `main` in GitHub (a branch protection rule or ruleset) before the first deploy, because the deploy role trusts any workflow run on `main` and can run commands as root on the server through SSM.
+5. Check the instance is Online in Systems Manager, then Fleet Manager, in `ap-south-1`.
+   If it is not, reboot it once and check again: the instance can boot before its SSM policy is attached, and the first deploy's `send-command` then fails with an unhelpful error (gotcha G02).
+   `main` stays unprotected by decision (section 4, `iam_github.tf`).
 6. In GitHub, open Actions, then Deploy, then "Run workflow" on `main`, with `sha` left empty.
    The first deploy starts Caddy, which gets the Let's Encrypt certificate on its own; `deploy.sh` waits up to 2 minutes for `/readyz`.
 7. Check `https://pos.afnanio.top/healthz` and `/readyz`.
@@ -576,6 +594,27 @@ Recover only while the database holds no real data, because there are no backups
 1. Stop the stack over SSM: `cd /opt/pos && docker compose -f docker-compose.prod.yml down`.
 2. Empty the data folder: `find /data/postgres -mindepth 1 -delete`.
 3. Fix the cause, then start the Deploy workflow again.
+
+Rotating a database password (`MIGRATOR_PASSWORD` or `APP_DB_PASSWORD`) is manual, because `01-roles.sh` runs only on an empty data folder and a new value in SSM never reaches the existing role.
+Without these steps, the next deploy writes the new password into the database URLs and fails at `migrate` with an authentication error.
+
+1. From your laptop, give SSM a new value through Terraform: `terraform apply -replace=random_password.app_db` (or `random_password.migrator`).
+   Write it through Terraform, not with `aws ssm put-parameter`, because the next `terraform apply` puts its own value back.
+   The running app is not affected, because its `.env` still holds the old password.
+2. Open a shell with the `ssm_session_command` output and set the role's password to the new SSM value:
+   ```
+   cd /opt/pos
+   new=$(aws ssm get-parameter --region ap-south-1 --name /techzu-pos/prod/APP_DB_PASSWORD --with-decryption --query Parameter.Value --output text)
+   printf "SET log_min_error_statement = panic;\nALTER ROLE pos_app PASSWORD '%s';\n" "$new" | docker exec -i pos-db-1 psql -q -v ON_ERROR_STOP=1 -v VERBOSITY=terse -U postgres -d pos
+   unset new
+   ```
+   For the migrator, read `MIGRATOR_PASSWORD` and alter `migrator` instead.
+   The `SET` and the terse verbosity keep the statement, and so the password, out of the Postgres log and the error excerpt if it fails.
+3. Start the Deploy workflow straight away with `sha` set to the commit that is live now, so `deploy.sh` writes the new password into `.env` and restarts the app without shipping new code.
+   Until then, connections the app already holds keep working, but any new one fails to log in.
+   The deploy also recreates the `db` container, because the passwords are in its environment, so expect a few seconds of downtime.
+
+`POSTGRES_PASSWORD` needs no rotation: it is used only while an empty data folder is initialised.
 
 Replacing the instance, for example to pick up a newer AMI or an edited `cloud-init.yaml.tftpl` (both are ignored on a normal plan):
 
@@ -618,7 +657,9 @@ Open after the foundation build, 2026-11-25:
   The first deploy started by hand confirms them.
 - **Demo data in prod:** nothing runs `npm run seed` on the server, and no SSM parameter holds the outlet users' passwords.
   Decide whether seed runs once by hand over SSM, or prod has no demo data.
-- **Password rotation:** `01-roles.sh` runs only on an empty volume, so a password changed in SSM never reaches the database roles; rotation is manual.
+- **Password rotation:** `01-roles.sh` runs only on an empty volume, so a password changed in SSM never reaches the database roles; rotation is manual (section 7).
+- **No automatic rollback:** a deploy whose `/readyz` never answers stays in place; rolling back is a manual Deploy run with the previous SHA (section 5, `deploy/deploy.sh`).
+- **Branch protection on `main`:** off by decision while one developer has write access (section 4, `iam_github.tf`).
 - **Rollback window:** a rollback can only reach one of the last 10 images ECR keeps.
 - **Backups:** none, by decision, because this is a test deployment.
   A real one would add EBS snapshots, a nightly `pg_dump`, or both.
