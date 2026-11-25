@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-readonly ssm_path=${POS_SSM_PATH:-/techzu-pos/prod}
 readonly project=pos
 readonly ready_timeout_s=120
 
@@ -18,6 +17,11 @@ usage() {
 [[ $# -eq 1 ]] || usage
 readonly image_tag=$1
 [[ $image_tag =~ ^[0-9a-f]{40}$ ]] || usage
+
+# Terraform names the ECR repository and the SSM path after the same project_name.
+[[ ${ECR_REPOSITORY_URL:-} =~ ^[0-9]{12}\.dkr\.ecr\.[a-z0-9-]+\.amazonaws\.com/([a-z0-9]+(-[a-z0-9]+)*)$ ]] ||
+  fail "ECR_REPOSITORY_URL must be set to the ECR repository URL, whose name is the Terraform project_name"
+readonly ssm_path="/${BASH_REMATCH[1]}/prod"
 
 deploy_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 readonly deploy_dir
@@ -54,6 +58,8 @@ params=$(aws ssm get-parameters-by-path --region "$region" --path "$ssm_path" \
   --recursive --with-decryption --output json)
 
 ecr_repository_url=$(param ECR_REPOSITORY_URL) || fail "ECR_REPOSITORY_URL is not set in SSM"
+[[ $ecr_repository_url == "$ECR_REPOSITORY_URL" ]] ||
+  fail "ECR_REPOSITORY_URL in SSM is $ecr_repository_url, but the deploy was started for $ECR_REPOSITORY_URL"
 app_domain=$(param APP_DOMAIN) || fail "APP_DOMAIN is not set in SSM"
 migrator_password=$(param MIGRATOR_PASSWORD) || fail "MIGRATOR_PASSWORD is not set in SSM"
 app_db_password=$(param APP_DB_PASSWORD) || fail "APP_DB_PASSWORD is not set in SSM"

@@ -129,6 +129,7 @@ jobs:
           # The server's /bin/sh is dash, so the command avoids bash-only options such as pipefail.
           jq -n \
             --arg region "$AWS_REGION" \
+            --arg repository "$ECR_REPOSITORY_URL" \
             --arg registry "${ECR_REPOSITORY_URL%%/*}" \
             --arg image "$ECR_REPOSITORY_URL:$SHA" \
             --arg sha "$SHA" \
@@ -137,6 +138,7 @@ jobs:
               commands: [
                 "set -eu",
                 "export AWS_REGION=\($region)",
+                "export ECR_REPOSITORY_URL=\($repository)",
                 "aws ecr get-login-password --region \($region) | docker login --username AWS --password-stdin \($registry)",
                 "docker pull \($image)",
                 "mkdir -p /opt/pos",
