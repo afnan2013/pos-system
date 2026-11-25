@@ -1,0 +1,197 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  api:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+          cache: npm
+          cache-dependency-path: api/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - name: Test (testcontainers starts its own Postgres)
+        run: npm test
+      - run: npm run build
+
+  web:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  drift:
+    name: pgtyped drift
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:18.7-alpine
+        env:
+          POSTGRES_PASSWORD: ci-postgres-password
+          POSTGRES_DB: pos
+        ports:
+          - 5432:5432
+        # Over TCP, because the init-time server listens only on the socket until initdb finishes.
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U postgres -d pos"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      MIGRATOR_PASSWORD: ci-migrator-password
+      APP_DB_PASSWORD: ci-app-password
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+          cache: npm
+          cache-dependency-path: api/package-lock.json
+      - run: npm ci
+      - name: Create the database roles
+        working-directory: .
+        env:
+          PG_CONTAINER: ${{ job.services.postgres.id }}
+          POSTGRES_USER: postgres
+          POSTGRES_DB: pos
+        run: >-
+          docker exec -i
+          -e POSTGRES_USER -e POSTGRES_DB -e MIGRATOR_PASSWORD -e APP_DB_PASSWORD
+          "$PG_CONTAINER" bash -s < deploy/initdb/01-roles.sh
+      - name: Apply migrations
+        env:
+          APP_ENV: local
+          MIGRATOR_DATABASE_URL: postgres://migrator:${{ env.MIGRATOR_PASSWORD }}@localhost:5432/pos
+        run: npm run migrate
+      - name: Regenerate query types
+        env:
+          DATABASE_URL: postgres://pos_app:${{ env.APP_DB_PASSWORD }}@localhost:5432/pos
+        run: npm run db:generate
+      - name: Fail if generated files differ from the commit
+        run: |
+          drift=$(git status --porcelain --untracked-files=all -- 'src/*.queries.ts')
+          if [ -n "$drift" ]; then
+            echo "::error::Generated query files differ from the commit; run npm run db:generate and commit the result."
+            echo "$drift"
+            git diff -- 'src/*.queries.ts'
+            exit 1
+          fi
+          orphans=0
+          while IFS= read -r -d '' file; do
+            if [ ! -f "${file%.queries.ts}.sql" ]; then
+              echo "::error file=api/$file::No .sql file beside this generated file; delete it."
+              orphans=1
+            fi
+          done < <(find src -name '*.queries.ts' -print0)
+          exit "$orphans"
+
+  image:
+    name: image (arm64, no push)
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: docker build --target runtime --tag pos-system:ci .
+      - run: docker build --target dev --tag pos-system:ci-dev .
+      - name: Check the compose files
+        run: |
+          cp .env.example .env
+          docker compose config --quiet
+          docker compose -f docker-compose.dev.yml config --quiet
+
+  pins:
+    name: Postgres tag
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Fail unless every file pins the same Postgres tag
+        run: |
+          pattern='postgres:[0-9][A-Za-z0-9._-]*'
+          for file in docker-compose.yml docker-compose.dev.yml deploy/docker-compose.prod.yml \
+            api/test/support/postgres.ts .github/workflows/ci.yml; do
+            if ! grep -qE "$pattern" "$file"; then
+              echo "::error file=$file::No pinned postgres image found."
+              exit 1
+            fi
+          done
+          tags=$(git grep -hoE "$pattern" -- ':!*.md' ':!*.html' | sort -u)
+          if [ "$(printf '%s\n' "$tags" | wc -l)" -ne 1 ]; then
+            echo "::error::Files pin different Postgres tags:"
+            git grep -noE "$pattern" -- ':!*.md' ':!*.html'
+            exit 1
+          fi
+          echo "Every file pins $tags"
+
+  scripts:
+    name: shellcheck
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: git ls-files -z -- '*.sh' | xargs -0 --no-run-if-empty shellcheck
+
+  terraform:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: infra/terraform
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: 1.16.4
+          terraform_wrapper: false
+      - run: terraform fmt -check -recursive
+      - run: terraform init -backend=false -input=false -lockfile=readonly
+      - run: terraform validate
