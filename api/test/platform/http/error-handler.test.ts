@@ -26,6 +26,30 @@ function checkViolation(): DatabaseError {
   return error;
 }
 
+function failedQuery(code: string, message: string, fields: Partial<DatabaseError>): DatabaseError {
+  const error = new DatabaseError(message, 0, 'error');
+  Object.assign(error, { code, where: "unnamed portal parameter $1 = 'secret-param'" }, fields);
+  return error;
+}
+
+const notNullViolation = () =>
+  failedQuery(
+    '23502',
+    'null value in column "name" of relation "menu_items" violates not-null constraint',
+    {
+      schema: 'pos',
+      table: 'menu_items',
+      column: 'name',
+      routine: 'ExecConstraints',
+      detail: 'Failing row contains (secret-row, null).',
+    },
+  );
+
+const invalidText = () =>
+  failedQuery('22P02', 'invalid input syntax for type uuid: "secret-input"', {
+    routine: 'string_to_uuid',
+  });
+
 const ErrInsufficientStock = conflict('Not enough stock');
 
 const app = platformApp((app) => {
@@ -47,6 +71,12 @@ const app = platformApp((app) => {
   });
   app.get('/check', () => {
     throw mapPgError(checkViolation());
+  });
+  app.get('/not-null', () => {
+    throw mapPgError(notNullViolation());
+  });
+  app.get('/bad-text', () => {
+    throw mapPgError(invalidText());
   });
   app.get('/down', () => {
     throw unavailable(
@@ -161,6 +191,32 @@ describe('errorHandler', () => {
     ]);
     expect(JSON.stringify(lines)).not.toContain('secret-value');
   });
+
+  it.each([
+    ['/not-null', '23502', { table: 'menu_items', column: 'name', routine: 'ExecConstraints' }],
+    ['/bad-text', '22P02', { routine: 'string_to_uuid' }],
+  ])(
+    'logs a 500 from %s by SQLSTATE %s and names only, never values',
+    async (path, sqlState, names) => {
+      const logs = captureLogs();
+      const response = await request(app).get(path);
+      expect(response.status).toBe(500);
+      const errors = logs.records().filter((record) => record['level'] === 'error');
+      expect(errors).toEqual([
+        expect.objectContaining({
+          msg: 'unexpected error',
+          route: path,
+          err: expect.objectContaining({
+            type: 'AppError',
+            database: expect.objectContaining({ sqlState, ...names }) as unknown,
+          }) as unknown,
+        }) as unknown,
+      ]);
+      const text = JSON.stringify(logs.records());
+      expect(text).not.toContain('secret');
+      expect(text).not.toContain('Failing row');
+    },
+  );
 
   it('answers unavailable with 503 and logs a warning without a stack', async () => {
     const logs = captureLogs();

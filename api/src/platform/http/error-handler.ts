@@ -1,5 +1,5 @@
 import type { ErrorRequestHandler, Request, Response } from 'express';
-import { DatabaseError } from 'pg';
+import { databaseErrorLog, loggableError } from '../db/loggable-error.js';
 import type { AppError, FieldErrors } from '../errors/app-error.js';
 import { ErrorKind, problemSpecs, type ProblemSpec } from '../errors/error-kind.js';
 import { causeChain, kindOf } from '../errors/kind-of.js';
@@ -76,7 +76,7 @@ function logProblem(req: Request, appError: AppError, kind: ErrorKind, spec: Pro
   const log = logger();
   switch (spec.logAt) {
     case 'error':
-      log.error({ err: appError, route }, 'unexpected error');
+      log.error({ err: loggableError(appError), route }, 'unexpected error');
       return;
     case 'warn':
       log.warn({ kind, reason: reasonOf(appError), route }, spec.title);
@@ -89,18 +89,14 @@ function logProblem(req: Request, appError: AppError, kind: ErrorKind, spec: Pro
   }
 }
 
-// The constraint name and SQLSTATE only: the error's detail can quote the rejected values.
 function logDatabaseRejection(appError: AppError, route: string | undefined): void {
-  const databaseError = causeChain(appError).find((link) => link instanceof DatabaseError);
-  if (databaseError === undefined) return;
-  logger().info(
-    { constraint: databaseError.constraint, sqlState: databaseError.code, route },
-    'database rejected the input',
-  );
+  const database = databaseErrorLog(appError);
+  if (database === undefined) return;
+  logger().info({ ...database, route }, 'database rejected the input');
 }
 
 function abandonResponse(req: Request, err: unknown): void {
-  logger().error({ err, route: routeOf(req) }, 'error after response started');
+  logger().error({ err: loggableError(err), route: routeOf(req) }, 'error after response started');
   req.socket.destroy();
 }
 
