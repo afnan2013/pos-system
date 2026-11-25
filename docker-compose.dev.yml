@@ -1,0 +1,87 @@
+name: pos-dev
+
+x-dev-image: &dev-image
+  build:
+    context: .
+    target: dev
+  image: pos-system:dev
+  init: true
+
+services:
+  db:
+    image: postgres:18.7-alpine
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?copy .env.example to .env}
+      POSTGRES_DB: pos
+      MIGRATOR_PASSWORD: ${MIGRATOR_PASSWORD:?copy .env.example to .env}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?copy .env.example to .env}
+    volumes:
+      - db-data:/var/lib/postgresql
+      - ./deploy/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      # Over TCP, because the init-time server listens only on the socket until initdb scripts finish.
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "postgres", "-d", "pos"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 30s
+
+  migrate:
+    <<: *dev-image
+    working_dir: /app/api
+    # Reinstall only when the lock changed after the volume's install, so a new dependency needs no image rebuild.
+    command: ["sh", "-c", "[ node_modules/.package-lock.json -nt package-lock.json ] || npm ci && exec npm run migrate"]
+    environment:
+      APP_ENV: ${APP_ENV:?copy .env.example to .env}
+      LOG_LEVEL: ${LOG_LEVEL:-}
+      MIGRATOR_DATABASE_URL: postgres://migrator:${MIGRATOR_PASSWORD:?copy .env.example to .env}@db:5432/pos
+    volumes:
+      - ./api:/app/api
+      - api-node-modules:/app/api/node_modules
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    <<: *dev-image
+    working_dir: /app/api
+    command: ["sh", "-c", "[ node_modules/.package-lock.json -nt package-lock.json ] || npm ci && exec npm run dev"]
+    environment:
+      APP_ENV: ${APP_ENV:?copy .env.example to .env}
+      LOG_LEVEL: ${LOG_LEVEL:-}
+      HTTP_PORT: ${HTTP_PORT:-}
+      # People open the Vite server in this stack, not the API port.
+      PUBLIC_ORIGIN: http://localhost:5173
+      DATABASE_URL: postgres://pos_app:${APP_DB_PASSWORD:?copy .env.example to .env}@db:5432/pos
+      DB_MAX_CONNS: ${DB_MAX_CONNS:-}
+      TOKEN_SIGNING_KEY: ${TOKEN_SIGNING_KEY:?copy .env.example to .env}
+      ACCESS_TOKEN_TTL: ${ACCESS_TOKEN_TTL:-}
+      # macOS bind mounts (seen on Colima virtiofs) drop events for rename-style saves, so tsx and Vite poll.
+      CHOKIDAR_USEPOLLING: "true"
+    volumes:
+      - ./api:/app/api
+      - api-node-modules:/app/api/node_modules
+    ports:
+      - "127.0.0.1:3000:${HTTP_PORT:-3000}"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  web:
+    <<: *dev-image
+    working_dir: /app/web
+    command: ["sh", "-c", "[ node_modules/.package-lock.json -nt package-lock.json ] || npm ci && exec npm run dev -- --host 0.0.0.0"]
+    environment:
+      VITE_API_PROXY_TARGET: http://api:${HTTP_PORT:-3000}
+      # Same reason as the api service: file events are unreliable on the macOS mount.
+      CHOKIDAR_USEPOLLING: "true"
+    volumes:
+      - ./web:/app/web
+      - web-node-modules:/app/web/node_modules
+    ports:
+      - "127.0.0.1:5173:5173"
+
+volumes:
+  db-data:
+  api-node-modules:
+  web-node-modules:
