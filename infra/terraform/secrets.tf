@@ -51,6 +51,8 @@ locals {
     DB_MAX_CONNS       = "10"
     ACCESS_TOKEN_TTL   = "1h"
     ECR_REPOSITORY_URL = aws_ecr_repository.app.repository_url
+    LOG_GROUP          = aws_cloudwatch_log_group.app.name
+    AWS_REGION         = data.aws_region.current.region
   }
 }
 

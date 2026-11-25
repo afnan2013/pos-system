@@ -43,6 +43,28 @@ variable "github_repo" {
   }
 }
 
+variable "github_owner_id" {
+  description = "Numeric GitHub ID of the github_repo owner, part of the immutable OIDC subject."
+  type        = string
+  default     = "27606729"
+
+  validation {
+    condition     = can(regex("^[0-9]+$", var.github_owner_id))
+    error_message = "github_owner_id must be the owner's numeric GitHub ID."
+  }
+}
+
+variable "github_repo_id" {
+  description = "Numeric GitHub ID of github_repo, part of the immutable OIDC subject."
+  type        = string
+  default     = "1470777261"
+
+  validation {
+    condition     = can(regex("^[0-9]+$", var.github_repo_id))
+    error_message = "github_repo_id must be the repository's numeric GitHub ID."
+  }
+}
+
 variable "instance_type" {
   description = "EC2 instance type; must be an ARM (Graviton) type."
   type        = string
