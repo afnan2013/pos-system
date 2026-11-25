@@ -17,6 +17,13 @@ export default defineConfig(
         'error',
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
       ],
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'TSEnumDeclaration',
+          message: 'Use an `as const` object with a derived union instead of an enum.',
+        },
+      ],
       'no-console': 'error',
     },
   },
