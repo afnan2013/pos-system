@@ -11,7 +11,7 @@ Full patterns: `docs/frontend-engineering.md`; every page: `docs/ui-blueprint.ht
 ## Stack
 
 React 19, Vite, TypeScript (`strict`), React Router v7 (`createBrowserRouter`), TanStack Query for server state, Zustand for client UI state only, react-hook-form + zod, Tailwind v4 + shadcn/ui, sonner for toasts, axios.
-Tests: vitest, Testing Library and MSW.
+Tests: vitest, Testing Library and MSW, in `web/test/` mirroring `src/` (shared helpers in `web/test/support/`).
 English only; no i18n layer.
 
 ## Layout
@@ -38,7 +38,7 @@ src/
 
 ## Rules
 
-- The browser calls the relative path `/api/v1/...` on its own origin; locally Vite proxies `/api` to `http://localhost:3000`, deployed it is the same container. No CORS, no `withCredentials`, no auth header.
+- The browser calls the relative path `/api/v1/...` on its own origin; locally Vite proxies `/api` (and `/healthz`, `/readyz`) to `VITE_API_PROXY_TARGET`, default `http://localhost:3000` (`http://api:3000` in the dev stack); deployed it is the same container. No CORS, no `withCredentials`, no auth header.
 - No token in JavaScript: the session is the HttpOnly cookie; "who am I" is `useMe()` on `GET /api/v1/me`. Never store tokens in Zustand, localStorage or sessionStorage.
 - A 401 from any call except `/me` and login invalidates the `me` query, so `RequireAuth` sends the user to login.
 - What a user sees follows their permissions from `useMe()`: HQ users land on `/hq`, outlet users on `/outlet`; menu entries and buttons the user cannot use are hidden, and the API still enforces every rule.
@@ -47,7 +47,9 @@ src/
 - Money arrives in minor units and is formatted only through `lib/money.ts`, in the one company currency.
 - The POS sell screen sends an `Idempotency-Key` (a UUID made when the cart is started) with every sale, and keeps it on retry; a new key is made only after a successful sale or when an editable cart is cleared.
 - After a network error, timeout or 5xx, the cart locks and "Retry" resends the same key, so a sale is never charged twice.
-- The cart (item IDs, quantities, key, status) lives in a Zustand store saved to `sessionStorage` per user and outlet, so it survives a reload or a sign-in after a 401; this is the only data allowed in browser storage.
+- The cart (item IDs, quantities, key, status) lives in a Zustand store saved to `sessionStorage` per user and outlet, so it survives a reload or a sign-in after a 401.
+- Browser storage holds only the cart and the theme preference (`localStorage` key `pos-theme`, value `light` or `dark`; absent means follow the system).
+- `public/theme.js`, loaded by a blocking `<script src="/theme.js">` in `index.html`, applies the theme class before React draws; there is no inline script, because the CSP is `script-src 'self'`.
 - Every page handles its loading, empty, error and forbidden states, not only the happy path.
 - Components stay presentational; data fetching lives in the feature's hooks.
 - No `any`, no `enum`, no `eslint-disable` without a one-line reason.

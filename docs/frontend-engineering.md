@@ -47,6 +47,10 @@ Strings live in the components that show them.
 Server data is never copied into Zustand or into component state.
 The cart is the clearest example: it holds only `menuItemId` and `quantity` per line; names, prices and stock are read from the outlet menu query at render time.
 
+**Browser storage holds only two things:** the cart, in `sessionStorage` per user and outlet (see the sell screen below), and the theme preference.
+The theme is kept in `localStorage` under the key `pos-theme`, with the plain value `light` or `dark`; no key, or any other value, means follow the system setting.
+`lib/theme.ts` **(proposed)** writes that key, and `public/theme.js` reads it before React draws.
+
 **Auth is server state.**
 The access token is an HttpOnly cookie that JavaScript cannot read, so there is no token in Zustand, `localStorage` or `sessionStorage`.
 "Who am I" is a query, `useMe()` on `GET /api/v1/me`, cached under `queryKeys.me`.
@@ -59,8 +63,9 @@ The screens read nothing else about the user.
 
 ```
 web/
-  index.html              sets the theme class before React draws (no flash of the wrong theme)
-  vite.config.ts          proxies /api to http://localhost:3000
+  index.html              loads public/theme.js with a blocking <script src="/theme.js">, then the app
+  public/theme.js         sets the dark class on <html> from localStorage pos-theme before React draws (no flash of the wrong theme)
+  vite.config.ts          port 5173; proxies /api, /healthz, /readyz to VITE_API_PROXY_TARGET (default http://localhost:3000)
   src/
     main.tsx              QueryClientProvider -> RouterProvider -> Toaster
     router.tsx            /login; /hq/* (HQ console); /outlet/* (outlet app); /403; 404
@@ -88,10 +93,12 @@ web/
       dates.ts            date and time display, report date ranges (proposed)
       theme.ts            light, dark or system; applies the class on <html> (proposed)
       queryKeys.ts        one key factory for the whole app
-    test/                 setup.ts, server.ts (MSW), handlers/, fixtures/, renderWithProviders.tsx (proposed)
+  test/                   mirrors src/ (test/lib/api/ApiError.test.ts tests src/lib/api/ApiError.ts)
+    support/              setup.ts, server.ts (MSW), handlers/, fixtures/, renderWithProviders.tsx (proposed)
 ```
 
-- Files that export a component are `PascalCase.tsx`; everything else is `camelCase.ts`; tests sit next to the file as `<name>.test.ts(x)`.
+- The theme script is a separate file, not inline in `index.html`, because the API sends a Content-Security-Policy with `script-src 'self'` and no inline script is allowed.
+- Files that export a component are `PascalCase.tsx`; everything else is `camelCase.ts`; tests live in `web/test/`, mirroring the path of the file they test, as `<name>.test.ts(x)`.
 - A feature imports another feature only through that feature's `hooks.ts` or `api.ts`, never its `pages/` or `components/`.
 - **The HQ console and the outlet app are separate lazy route trees.**
   A cashier's tablet never downloads HQ code, and HQ never downloads the sell screen.
@@ -101,7 +108,7 @@ web/
 
 **One origin, one client.**
 The browser calls the relative path `/api/v1/...` on its own origin.
-Locally, Vite (port 5173) proxies `/api` to the API on port 3000; deployed, the same container serves both.
+Locally, Vite (port 5173) proxies `/api` to the API on port 3000 (to `http://api:3000` in the Docker dev stack, through `VITE_API_PROXY_TARGET`); deployed, the same container serves both.
 There is no CORS request, no `withCredentials` and no auth header: the session cookie goes with every same-origin request on its own.
 
 ```ts
@@ -136,7 +143,7 @@ So `handleMutationError` hands `ApiError.fields` to react-hook-form's `setError`
 A field key the form does not have (for example a nested key the form flattened) falls back to a toast with the problem's title.
 
 **401: the session ended.**
-A 401 from any call except `GET /v1/me` and `POST /v1/auth/login` invalidates the `me` query.
+A 401 from any call except `GET /api/v1/me` and `POST /api/v1/auth/login` invalidates the `me` query.
 `useMe()` then fails with `unauthorized`, and `RequireAuth` sends the person to `/login?next=<where they were>`.
 There are no refresh tokens: when the access token expires (`ACCESS_TOKEN_TTL`, one hour by default) the next call gets 401 and the person signs in again.
 The cart survives this, because it is persisted in the tab (see the sell screen below).
@@ -396,7 +403,7 @@ Selling while offline is not in this build; the architecture document describes 
 
 ## Testing
 
-- **vitest** with **Testing Library** and **MSW**; tests sit next to the file they test.
+- **vitest** with **Testing Library** and **MSW**; tests live in `web/test/`, mirroring `src/`, and shared helpers in `web/test/support/`.
 - `test/renderWithProviders.tsx` **(proposed)** renders with a fresh `QueryClient` (retries off), a memory router at a given path, and a signed-in user from fixtures.
 - MSW handlers in `test/handlers/` mirror the API per feature and return typed fixtures; a test overrides one handler to return a problem document.
   The real axios client and interceptors run in every test; axios is never mocked.
