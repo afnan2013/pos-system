@@ -45,6 +45,7 @@ services:
   api:
     <<: *dev-image
     working_dir: /app/api
+    stop_grace_period: 30s
     command: ["sh", "-c", "[ node_modules/.package-lock.json -nt package-lock.json ] || npm ci && exec npm run dev"]
     environment:
       APP_ENV: ${APP_ENV:?copy .env.example to .env}
@@ -52,6 +53,7 @@ services:
       HTTP_PORT: ${HTTP_PORT:-}
       # People open the Vite server in this stack, not the API port.
       PUBLIC_ORIGIN: http://localhost:5173
+      SHUTDOWN_TIMEOUT: ${SHUTDOWN_TIMEOUT:-}
       DATABASE_URL: postgres://pos_app:${APP_DB_PASSWORD:?copy .env.example to .env}@db:5432/pos
       DB_MAX_CONNS: ${DB_MAX_CONNS:-}
       TOKEN_SIGNING_KEY: ${TOKEN_SIGNING_KEY:?copy .env.example to .env}

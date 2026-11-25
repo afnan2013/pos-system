@@ -56,6 +56,7 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-}
       HTTP_PORT: ${HTTP_PORT:-}
       PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:?run deploy.sh to write .env}
+      SHUTDOWN_TIMEOUT: ${SHUTDOWN_TIMEOUT:-}
       DATABASE_URL: ${DATABASE_URL:?run deploy.sh to write .env}
       DB_MAX_CONNS: ${DB_MAX_CONNS:-}
       TOKEN_SIGNING_KEY: ${TOKEN_SIGNING_KEY:?run deploy.sh to write .env}

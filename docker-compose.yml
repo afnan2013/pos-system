@@ -20,7 +20,9 @@ services:
       start_period: 30s
 
   migrate:
-    build: .
+    build:
+      context: .
+      target: runtime
     image: pos-system:local
     command: ["node", "dist/cli/migrate.js"]
     environment:
@@ -34,13 +36,17 @@ services:
         condition: service_healthy
 
   app:
-    build: .
+    build:
+      context: .
+      target: runtime
     image: pos-system:local
+    stop_grace_period: 30s
     environment:
       APP_ENV: ${APP_ENV:?copy .env.example to .env}
       LOG_LEVEL: ${LOG_LEVEL:-}
       HTTP_PORT: ${HTTP_PORT:-}
       PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:?copy .env.example to .env}
+      SHUTDOWN_TIMEOUT: ${SHUTDOWN_TIMEOUT:-}
       DATABASE_URL: postgres://pos_app:${APP_DB_PASSWORD:?copy .env.example to .env}@db:5432/pos
       DB_MAX_CONNS: ${DB_MAX_CONNS:-}
       TOKEN_SIGNING_KEY: ${TOKEN_SIGNING_KEY:?copy .env.example to .env}
