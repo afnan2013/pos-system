@@ -3,7 +3,7 @@ import express, { type Express } from 'express';
 import { registerHealthRoutes } from './platform/health/health.js';
 import { errorHandler } from './platform/http/error-handler.js';
 import { jsonBody } from './platform/http/json-body.js';
-import { notFound } from './platform/http/not-found.js';
+import { notFoundHandler } from './platform/http/not-found-handler.js';
 import { requestId } from './platform/http/request-id.js';
 import { requestLog } from './platform/http/request-log.js';
 import { recordRoutePrefix } from './platform/http/route-pattern.js';
@@ -29,9 +29,9 @@ export function buildApp(services: Services, options: AppOptions = {}): Express 
   app.use(jsonBody);
   registerHealthRoutes(app, services.pool);
   app.use('/api/v1', recordRoutePrefix, mountRoutes());
-  app.use('/api', notFound);
+  app.use('/api', notFoundHandler);
   serveWeb(app, options.webDir ?? WEB_BUILD_DIR);
-  app.use(notFound);
+  app.use(notFoundHandler);
   app.use(errorHandler);
   return app;
 }

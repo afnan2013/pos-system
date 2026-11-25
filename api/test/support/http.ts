@@ -4,7 +4,7 @@ import { Secret } from '../../src/platform/config/secret.js';
 import { createPool } from '../../src/platform/db/create-pool.js';
 import { errorHandler } from '../../src/platform/http/error-handler.js';
 import { jsonBody } from '../../src/platform/http/json-body.js';
-import { notFound } from '../../src/platform/http/not-found.js';
+import { notFoundHandler } from '../../src/platform/http/not-found-handler.js';
 import { requestId } from '../../src/platform/http/request-id.js';
 import { requestLog } from '../../src/platform/http/request-log.js';
 import { securityHeaders } from '../../src/platform/http/security-headers.js';
@@ -16,7 +16,7 @@ export function platformApp(register: (app: Express) => void): Express {
   app.use(requestLog);
   app.use(jsonBody);
   register(app);
-  app.use(notFound);
+  app.use(notFoundHandler);
   app.use(errorHandler);
   return app;
 }
