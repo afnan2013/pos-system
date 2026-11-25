@@ -75,6 +75,7 @@ services:
     restart: unless-stopped
     environment:
       APP_DOMAIN: ${APP_DOMAIN:?run deploy.sh to write .env}
+      HTTP_PORT: ${HTTP_PORT:-3000}
     labels:
       # A changed Caddyfile changes this label, so up -d recreates caddy and it mounts the new file.
       pos.caddyfile-sha256: ${CADDYFILE_SHA256:-}
