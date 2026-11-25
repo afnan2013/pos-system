@@ -9,12 +9,16 @@ export type HttpSettings = {
 };
 
 const ORIGIN_EXAMPLE = 'such as https://pos.example.com';
+const MAX_SHUTDOWN_TIMEOUT_MS = 60_000;
 
 export function loadHttp(env: Env): HttpSettings {
   return parseEnv(env, {
     port: { name: 'HTTP_PORT', schema: wholeNumber(1, 65535, 3000) },
     publicOrigin: { name: 'PUBLIC_ORIGIN', schema: publicOrigin },
-    shutdownTimeoutMs: { name: 'SHUTDOWN_TIMEOUT', schema: duration({ fallback: '10s' }) },
+    shutdownTimeoutMs: {
+      name: 'SHUTDOWN_TIMEOUT',
+      schema: duration({ fallback: '10s', maxMs: MAX_SHUTDOWN_TIMEOUT_MS }),
+    },
   });
 }
 

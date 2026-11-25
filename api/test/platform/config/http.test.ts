@@ -35,7 +35,7 @@ describe('loadHttp', () => {
     expect(problemsOf(() => loadHttp({ HTTP_PORT: '70000', SHUTDOWN_TIMEOUT: 'soon' }))).toEqual([
       'HTTP_PORT: must be a whole number from 1 to 65535',
       'PUBLIC_ORIGIN: required (the address people open, such as https://pos.example.com)',
-      'SHUTDOWN_TIMEOUT: must be a duration such as 500ms, 10s, 5m or 1h',
+      'SHUTDOWN_TIMEOUT: must be a duration such as 500ms, 10s, 5m or 1h, at most 1m',
     ]);
   });
 
@@ -56,6 +56,24 @@ describe('loadHttp', () => {
       problemsOf(() =>
         loadHttp({ PUBLIC_ORIGIN: 'http://localhost:3000', SHUTDOWN_TIMEOUT: '0s' }),
       ),
-    ).toEqual(['SHUTDOWN_TIMEOUT: must be a duration such as 500ms, 10s, 5m or 1h']);
+    ).toEqual(['SHUTDOWN_TIMEOUT: must be a duration such as 500ms, 10s, 5m or 1h, at most 1m']);
   });
+
+  it('accepts a shutdown timeout of exactly 1m', () => {
+    expect(
+      loadHttp({ PUBLIC_ORIGIN: 'http://localhost:3000', SHUTDOWN_TIMEOUT: '60s' })
+        .shutdownTimeoutMs,
+    ).toBe(60_000);
+  });
+
+  it.each(['61s', '720h', '999999999h'])(
+    'rejects SHUTDOWN_TIMEOUT=%s above the 1m cap',
+    (value) => {
+      expect(
+        problemsOf(() =>
+          loadHttp({ PUBLIC_ORIGIN: 'http://localhost:3000', SHUTDOWN_TIMEOUT: value }),
+        ),
+      ).toEqual(['SHUTDOWN_TIMEOUT: must be a duration such as 500ms, 10s, 5m or 1h, at most 1m']);
+    },
+  );
 });
