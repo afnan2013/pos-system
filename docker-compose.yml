@@ -1,0 +1,55 @@
+name: pos-system
+
+services:
+  db:
+    image: postgres:18.7-alpine
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?copy .env.example to .env}
+      POSTGRES_DB: pos
+      MIGRATOR_PASSWORD: ${MIGRATOR_PASSWORD:?copy .env.example to .env}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?copy .env.example to .env}
+    volumes:
+      - db-data:/var/lib/postgresql
+      - ./deploy/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      # Over TCP, because the init-time server listens only on the socket until initdb scripts finish.
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "postgres", "-d", "pos"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 30s
+
+  migrate:
+    build: .
+    image: pos-system:local
+    command: ["node", "dist/cli/migrate.js"]
+    environment:
+      APP_ENV: ${APP_ENV:?copy .env.example to .env}
+      LOG_LEVEL: ${LOG_LEVEL:-}
+      MIGRATOR_DATABASE_URL: postgres://migrator:${MIGRATOR_PASSWORD:?copy .env.example to .env}@db:5432/pos
+    healthcheck:
+      disable: true
+    depends_on:
+      db:
+        condition: service_healthy
+
+  app:
+    build: .
+    image: pos-system:local
+    environment:
+      APP_ENV: ${APP_ENV:?copy .env.example to .env}
+      LOG_LEVEL: ${LOG_LEVEL:-}
+      HTTP_PORT: ${HTTP_PORT:-}
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:?copy .env.example to .env}
+      DATABASE_URL: postgres://pos_app:${APP_DB_PASSWORD:?copy .env.example to .env}@db:5432/pos
+      DB_MAX_CONNS: ${DB_MAX_CONNS:-}
+      TOKEN_SIGNING_KEY: ${TOKEN_SIGNING_KEY:?copy .env.example to .env}
+      ACCESS_TOKEN_TTL: ${ACCESS_TOKEN_TTL:-}
+    ports:
+      - "127.0.0.1:3000:${HTTP_PORT:-3000}"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  db-data:

@@ -1,0 +1,14 @@
+**/node_modules
+**/dist
+**/coverage
+**/*.tsbuildinfo
+**/.env*
+**/.DS_Store
+.git
+.adlc/
+.claude/
+infra/
+docs/
+api/public/
+api/test/
+web/test/
