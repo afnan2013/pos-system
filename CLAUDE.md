@@ -5,7 +5,8 @@ One company runs many food-and-beverage outlets.
 HQ owns the master menu, assigns items to outlets with optional price overrides, and watches sales.
 Each outlet sells from its own menu and its own stock.
 
-> **STATUS (2026-11-25):** folders, docs and AI guidance only; no code yet.
+> **STATUS (2026-11-25):** the foundation is built: the API platform layer (config, logging, errors, middleware, database access, health checks, migrations, pgtyped), the web app shell, one container image, a local stack, a hot-reload dev stack, CI and a deploy workflow started by hand.
+> There is no database schema, sign-in or business feature yet; the next features add them.
 > `docs/` describes the target design; each feature's spec confirms or changes its part, and updates the doc in the same change.
 
 ## What the brief requires
@@ -20,12 +21,12 @@ Each outlet sells from its own menu and its own stock.
 ## Decisions already taken
 
 - TypeScript everywhere; Express 5 API; React 19 + Vite web app.
-- Express serves the API under `/api` and the built React app from the same container on port 3000.
+- Express serves the API under `/api/v1`, health checks at `/healthz` and `/readyz`, and the built React app, from the same container on port 3000.
 - PostgreSQL 18 in a container on the same EC2 host; Caddy in front for automatic HTTPS; no nginx, no API Gateway.
 - Data access with `pg` and pgtyped: SQL lives in `.sql` files, pgtyped generates typed query functions, and a schema change surfaces as compile errors.
 - Access control: roles, permission keys in the access token, a permission check per route, and an outlet scope check in the service.
   Users belong to one outlet, or to none, which makes them HQ users; HQ manages roles and their permissions.
-- Terraform on AWS, applied by the user from their laptop; GitHub Actions builds, pushes to ECR and deploys over SSM.
+- Terraform on AWS, applied by the user from their laptop; GitHub Actions builds, pushes to ECR and deploys over SSM, only when the user starts a deploy by hand.
 
 ## Layout
 
@@ -37,6 +38,7 @@ deploy/         files that run on the server: production compose, Caddyfile, dep
 docs/           design docs, infrastructure plan, architecture document (not written yet)
 Dockerfile      one image: web build + compiled API
 docker-compose.yml   local stack for reviewers: db, migrate, app
+docker-compose.dev.yml   hot-reload dev stack: db, migrate, api (tsx watch), web (Vite)
 .claude/rules/  path-scoped guidance (see below)
 ```
 
@@ -74,5 +76,33 @@ Deeper detail, read only when needed: `docs/backend-design-patterns.md`, `docs/d
 
 ## Commands
 
-Added by the first REQ (foundation).
-Target shape: `npm run dev`, `npm run build`, `npm run lint`, `npm run typecheck`, `npm test` in `api/` and `web/`; `npm run migrate`, `npm run seed` and `npm run db:generate` (pgtyped) in `api/`; `docker compose up --build` at the root.
+Each package is its own npm project with its own lock file; run its commands inside `api/` or `web/` (Node 26, see `.nvmrc`).
+
+| `api/` | What it does |
+|---|---|
+| `npm run dev` | `tsx watch` on `src/main.ts`, logs made readable by `pino-pretty`; settings come from the environment (no `.env` file is read), so the dev stack below is the easy way |
+| `npm run build` / `npm start` | compile to `dist/` / run `node dist/main.js` |
+| `npm run lint` / `npm run format` | ESLint and `prettier --check` / `prettier --write` |
+| `npm run typecheck` | `tsc --noEmit` over `src/` and `test/` |
+| `npm test` | vitest; database tests start their own Postgres with testcontainers, so Docker must be running |
+| `npm run migrate` | apply `api/migrations/` with node-pg-migrate as `migrator` (`MIGRATOR_DATABASE_URL`) |
+| `npm run db:generate` | regenerate `*.queries.ts` with pgtyped against a migrated database (`DATABASE_URL`) |
+| `npm run seed` | placeholder; prints that nothing is seeded until the schema exists |
+
+| `web/` | What it does |
+|---|---|
+| `npm run dev` | Vite on port 5173, proxying `/api`, `/healthz` and `/readyz` to `VITE_API_PROXY_TARGET` (default `http://localhost:3000`) |
+| `npm run build` / `npm run preview` | type-check and build to `dist/` / serve that build |
+| `npm run lint` / `npm run format` / `npm run typecheck` / `npm test` | as in `api/` (tests: vitest, Testing Library, MSW) |
+
+Docker, at the repository root, after `cp .env.example .env` (every value in it is public and local-only):
+
+- `docker compose up --build`: the reviewer stack (`db`, then `migrate`, then `app`) at `http://localhost:3000`.
+- `docker compose -f docker-compose.dev.yml up --build`: the hot-reload stack; open `http://localhost:5173` (Vite), the API is on port 3000, and edits in `api/src` and `web/src` reload without a rebuild.
+  Run pgtyped inside it with `docker compose -f docker-compose.dev.yml exec api npm run db:generate`.
+- `down -v` on either stack stops it and deletes its volumes, the database included.
+- The Compose plugin (`docker compose`) and standalone `docker-compose` both work.
+- On Colima, the API tests need `export DOCKER_HOST=unix://$HOME/.colima/default/docker.sock` and `export TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock`; CI needs neither.
+
+Deploy is manual only: in GitHub, Actions, then Deploy, then "Run workflow" on `main`.
+Leave `sha` empty to deploy the tip of `main`, or give an older commit of `main` to roll back; nothing deploys on push or merge (`docs/infrastructure.md` section 6).
