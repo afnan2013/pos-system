@@ -320,7 +320,7 @@ footer { color: var(--muted); font-size: 0.88rem; border-top: 1px solid var(--li
       <div class="figure">
         <svg viewBox="0 0 400 828" role="img" aria-labelledby="arch-title arch-desc">
           <title id="arch-title">POS System architecture</title>
-          <desc id="arch-desc">The browser looks up the address in Route53 and connects over HTTPS to an Elastic IP on one EC2 server. On the server, Caddy handles HTTPS and forwards to the app container, which serves the API under /api/v1 and the React build, and talks to the Postgres container. Postgres data and Caddy certificates sit on a separate EBS volume. GitHub Actions pushes the image, with the deploy files inside it, to ECR, and through SSM the server pulls that image, copies the deploy files out of it and runs deploy.sh. There are no backups.</desc>
+          <desc id="arch-desc">The browser looks up the address in Route53 and connects over HTTPS to an Elastic IP on one EC2 server. On the server, Caddy handles HTTPS and forwards to the app container, which serves the API under /api/v1 and the React build, and talks to the Postgres container. Postgres data and Caddy certificates sit on a separate EBS volume. When a deploy is started by hand, GitHub Actions pushes the image, with the deploy files inside it, to ECR, and through SSM the server pulls that image, copies the deploy files out of it and runs deploy.sh. There are no backups.</desc>
           <defs>
             <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
               <path class="head" d="M0,0 L10,5 L0,10 z"/>
@@ -373,7 +373,7 @@ footer { color: var(--muted); font-size: 0.88rem; border-top: 1px solid var(--li
           <text class="tm" x="126" y="390">pos_app</text>
 
           <rect class="n" x="24" y="400" width="212" height="52" rx="8"/>
-          <text class="t" x="130" y="421" text-anchor="middle">db · postgres:18</text>
+          <text class="t" x="130" y="421" text-anchor="middle">db · postgres:18.7</text>
           <text class="ts" x="130" y="440" text-anchor="middle">schema pos · internal :5432</text>
 
           <rect class="n-dash" x="248" y="400" width="128" height="52" rx="8"/>
@@ -388,7 +388,7 @@ footer { color: var(--muted); font-size: 0.88rem; border-top: 1px solid var(--li
           <text class="ts" x="200" y="521" text-anchor="middle">Postgres data · Caddy certificates</text>
           <text class="ts" x="200" y="538" text-anchor="middle">no backups (test) · never destroyed by Terraform</text>
 
-          <text class="tz" x="8" y="612">DELIVERY · ON PUSH TO MAIN</text>
+          <text class="tz" x="8" y="612">DELIVERY · STARTED BY HAND</text>
           <text class="ts" x="372" y="600" text-anchor="end">used by deploy.sh</text>
 
           <rect class="n-accent" x="8" y="622" width="160" height="102" rx="8"/>
@@ -426,7 +426,7 @@ footer { color: var(--muted); font-size: 0.88rem; border-top: 1px solid var(--li
             <li><b>The app container</b> runs Express. It answers <code>/api/v1/*</code>, <code>/healthz</code> and <code>/readyz</code>, and serves the built React app for every other path, so the browser and the API share one origin and need no CORS (cross-origin resource sharing) setup.</li>
             <li><b>Postgres</b> runs as a container on the same server, reachable only on the internal Docker network. The API connects as <code>pos_app</code> (data access only); <code>migrate</code> runs first as <code>migrator</code>, and the app starts only if it succeeds.</li>
             <li><b>The data volume</b> is a separate EBS (Elastic Block Store) disk mounted at <code>/data</code>. Replacing the server never loses data or the certificate. There are no backups, because this is a test deployment: losing the volume loses the data.</li>
-            <li><b>Delivery.</b> On every push to <code>main</code>, after CI passes, GitHub Actions signs in to AWS through OIDC (OpenID Connect, so no AWS keys are stored), pushes the image tagged with the commit SHA to ECR with the <code>deploy/</code> files inside it, and sends a command through SSM (Systems Manager) that pulls that image, copies <code>deploy/</code> out of it and runs <code>deploy.sh &lt;sha&gt;</code>. The script writes <code>.env</code> from Parameter Store, pulls, starts the new containers, and fails the job if <code>/readyz</code> does not answer.</li>
+            <li><b>Delivery.</b> Deploys start only by hand: someone runs the Deploy workflow on <code>main</code> from the GitHub Actions page, and a push or merge never deploys. GitHub Actions signs in to AWS through OIDC (OpenID Connect, so no AWS keys are stored), pushes the image tagged with the commit SHA to ECR with the <code>deploy/</code> files inside it (or reuses it if ECR already has that tag), and sends a command through SSM (Systems Manager) that pulls that image, copies <code>deploy/</code> out of it and runs <code>deploy.sh &lt;sha&gt;</code>. The script writes <code>.env</code> from Parameter Store, pulls, starts the new containers, and fails the job if <code>/readyz</code> does not answer.</li>
             <li><b>No SSH.</b> Port 22 is closed. Shell access is an SSM session.</li>
           </ol>
           <p class="caption">Solid arrows carry traffic; dashed ones are DNS lookups, certificate renewal and the one-shot migration.</p>
@@ -542,7 +542,7 @@ footer { color: var(--muted); font-size: 0.88rem; border-top: 1px solid var(--li
         <span class="pick">Delivery</span>
         <h3>Terraform, OIDC and SSM</h3>
         <p>Every AWS resource is in Terraform, so the setup can be rebuilt from the repo. GitHub Actions assumes an AWS role through OIDC, limited to this repo's <code>main</code> branch, so no AWS keys are stored anywhere. Deploys run through SSM, so port 22 stays closed.</p>
-        <p class="alt"><b>Trade-off:</b> Terraform is applied by hand from a laptop, and a deploy restarts the app container in place, so a request may fail during the few seconds it takes. Rollback is deploying an older commit SHA.</p>
+        <p class="alt"><b>Trade-off:</b> Terraform is applied by hand from a laptop, and a deploy restarts the app container in place, so a request may fail during the few seconds it takes. Rollback is deploying an older commit SHA of <code>main</code>; the schema never rolls back, because migrations only go forward.</p>
       </article>
       <article>
         <span class="pick">Environments</span>

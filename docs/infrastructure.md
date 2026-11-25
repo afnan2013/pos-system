@@ -2,13 +2,13 @@
 
 | Field | Value |
 |---|---|
-| Status | Terraform built (section 4); containers, deploy and workflows still to build, 2026-11-25 |
+| Status | Built: Terraform (section 4), containers and deploy files (section 5), workflows (section 6); first deploy pending, 2026-11-25 |
 | Scope | AWS infrastructure (Terraform), container setup, and the GitHub Actions deploy path |
-| Applies to | `infra/`, `deploy/`, `Dockerfile`, `docker-compose.yml`, `.github/workflows/` |
+| Applies to | `infra/`, `deploy/`, `Dockerfile`, `.dockerignore`, `docker-compose.yml`, `docker-compose.dev.yml`, `.env.example`, `.github/workflows/` |
 
 This document lists everything that has to be built to run the POS platform on AWS, file by file.
-`infra/terraform/` exists and section 4 describes exactly what is in it.
-The container, deploy and workflow files (sections 5 and 6) are not built yet; those sections are their target design.
+Every file it names exists, and sections 4 to 6 describe them as built.
+Deploys start only by hand, from the GitHub Actions page; a push or a merge to `main` never deploys.
 
 ## 1. Open items (fill these in before `terraform apply`)
 
@@ -23,6 +23,7 @@ Every other value is committed, so `terraform.tfvars` is optional and only neede
 | Domain already hosted in Route53 | `afnanio.top` | `root_domain` default |
 | POS subdomain | `pos`, so the app is at `https://pos.afnanio.top` | `subdomain` default |
 | GitHub repository that may deploy | `afnan2013/pos-system` | `github_repo` default |
+| Its numeric owner and repository IDs | `27606729` and `1470777261`, part of the OIDC subject GitHub sends | `github_owner_id` and `github_repo_id` defaults |
 | Prefix for every resource name | `techzu-pos` | `project_name` default |
 | GitHub OIDC provider | the account's existing one, looked up, never created | `iam_github.tf` |
 
@@ -38,11 +39,11 @@ Route53 A record ──► Elastic IP ──► EC2 t4g.small (Ubuntu 24.04, ARM
                                      ├─ caddy    :80 :443  automatic HTTPS, reverse proxy to app:3000
                                      ├─ app      :3000     Express: /api/* + the React build (internal only)
                                      ├─ migrate  one-shot  migrations + permission sync, then exits
-                                     └─ db       :5432     postgres:18 (internal only)
+                                     └─ db       :5432     postgres:18.7-alpine (internal only)
                                      │
                                      └─ /data  (separate EBS volume: Postgres data + Caddy certificates)
 
-GitHub Actions ──(OIDC, no stored keys)──► ECR (image, deploy/ inside it) + SSM SendCommand ──► EC2
+GitHub Actions, started by hand ──(OIDC, no stored keys)──► ECR (image, deploy/ inside it) + SSM SendCommand ──► EC2
 ```
 
 Key decisions behind it:
@@ -57,6 +58,7 @@ Key decisions behind it:
 - Postgres data and Caddy certificates live on a separate EBS volume, so replacing the instance never loses data or forces a new certificate.
 - There are no backups: this is a test deployment, and losing the data volume loses the data.
 - Terraform is applied from your laptop; CI only checks formatting and validity.
+- Deploys are started by hand from the GitHub Actions page, on `main` only; nothing deploys on a push or a merge.
 - One environment (prod).
 
 ## 3. Repository layout for infrastructure
@@ -87,7 +89,10 @@ deploy/
   initdb/01-roles.sh
 Dockerfile
 .dockerignore
+.gitattributes
+.env.example
 docker-compose.yml
+docker-compose.dev.yml
 .github/workflows/ci.yml
 .github/workflows/deploy.yml
 ```
@@ -123,7 +128,7 @@ terraform {
 
 ### `variables.tf` and `terraform.tfvars.example`
 
-Eight variables, each with a committed default:
+Ten variables, each with a committed default:
 
 | Variable | Type | Default | Rule |
 |---|---|---|---|
@@ -132,11 +137,13 @@ Eight variables, each with a committed default:
 | `root_domain` | string | `afnanio.top` | a zone already hosted in Route53 |
 | `subdomain` | string | `pos` | one DNS label: lowercase letters, digits and inner hyphens, at most 63 characters |
 | `github_repo` | string | `afnan2013/pos-system` | `owner/name`; its `main` branch may assume the deploy role |
+| `github_owner_id` | string | `27606729` | digits only; the owner's numeric GitHub ID |
+| `github_repo_id` | string | `1470777261` | digits only; the repository's numeric GitHub ID |
 | `instance_type` | string | `t4g.small` | must be an ARM (Graviton) type, because the AMI and the image are ARM; not checked by a validation |
 | `data_volume_size_gb` | number | `20` | |
 | `log_retention_days` | number | `7` | |
 
-`terraform.tfvars.example` lists all eight with their default values; copy it to `terraform.tfvars` only to override one.
+`terraform.tfvars.example` lists all ten with their default values; copy it to `terraform.tfvars` only to override one.
 `terraform.tfvars` itself is git-ignored, and so are `*.tfplan` files, because a saved plan can hold secrets.
 
 ### `locals.tf`
@@ -232,7 +239,7 @@ The server has no S3 permissions.
 | Resource | Notes |
 |---|---|
 | `data "aws_iam_openid_connect_provider" "github"` | looks up the account's existing provider for `https://token.actions.githubusercontent.com`; Terraform never creates it, because an account can hold only one and this one already exists |
-| `aws_iam_role.github_deploy` | `<project_name>-github-deploy`, trust policy for that provider with conditions `aud = sts.amazonaws.com` and `sub = repo:<github_repo>:ref:refs/heads/main`, so only the `main` branch of this repository can assume it |
+| `aws_iam_role.github_deploy` | `<project_name>-github-deploy`, trust policy for that provider with conditions `aud = sts.amazonaws.com` and `sub = repo:<owner>@<github_owner_id>/<name>@<github_repo_id>:ref:refs/heads/main` (today `repo:afnan2013@27606729/pos-system@1470777261:ref:refs/heads/main`), so only the `main` branch of this repository can assume it |
 | `aws_iam_role_policy.github_deploy` | inline policy `<project_name>-github-deploy`, below |
 
 Inline policy statements:
@@ -242,7 +249,12 @@ Inline policy statements:
 - `DeployRun`: `ssm:SendCommand` on the instance ARN and on `arn:aws:ssm:<region>::document/AWS-RunShellScript`.
 - `DeployWatch`: `ssm:GetCommandInvocation` and `ssm:ListCommandInvocations` on `*` (neither has a resource form).
 
-GitHub Actions has no S3 permissions and no `ecr:DescribeImages`.
+GitHub sends this immutable subject, with the numeric IDs, for repositories created after 2026-07-15, so the plain `repo:<owner>/<name>` form would never match.
+The IDs also mean a repository deleted and created again under the same name cannot assume the role.
+The `sub` claim is built in a `locals` block from `github_repo` and the two ID variables.
+A job with an `environment:` would get a different subject, so `deploy.yml` sets none.
+
+GitHub Actions has no S3 permissions and no `ecr:DescribeImages`; the deploy workflow checks whether an image exists with `ecr:BatchGetImage`, which it already has.
 
 ### `ecr.tf`
 
@@ -255,7 +267,7 @@ A rollback can only go back to one of those 10 images; the image carries `deploy
 
 ### `secrets.tf` - secrets and settings
 
-Terraform writes 13 SSM parameters under `/<project_name>/prod/`.
+Terraform writes 15 SSM parameters under `/<project_name>/prod/`.
 The last part of each name is exactly the environment variable it becomes, because `deploy.sh` maps them by that suffix.
 Both sets use `for_each` over plain names, so adding a setting is one line.
 
@@ -272,7 +284,7 @@ Five secrets, stored as `SecureString` with the AWS-managed `aws/ssm` key:
 Passwords have no symbols (`special = false`), so they fit in a `postgres://` URL and in `.env` without escaping.
 The key is base64 because a multi-line PEM does not fit on one `.env` line, and PKCS#8 because the app imports it with `jose.importPKCS8`.
 
-Eight settings, stored as plain `String`:
+Ten settings, stored as plain `String`:
 
 | Parameter | Value |
 |---|---|
@@ -284,6 +296,8 @@ Eight settings, stored as plain `String`:
 | `DB_MAX_CONNS` | `10` |
 | `ACCESS_TOKEN_TTL` | `1h` |
 | `ECR_REPOSITORY_URL` | the ECR repository URL |
+| `LOG_GROUP` | the log group name, `/<project_name>/prod`, read by the `awslogs` driver in the production compose file |
+| `AWS_REGION` | the region of the POS resources, read by the `awslogs` driver |
 
 The secret values also sit in Terraform state, which is why the state bucket must stay private and encrypted.
 
@@ -312,66 +326,106 @@ Seven outputs:
 
 ### `Dockerfile` (repository root)
 
-Multi-stage, one image for the API and the web app:
+Multi-stage, one image for the API and the web app; every stage starts `FROM node:26.13.1-alpine`.
 
-1. `web-build`: `node:26-alpine`, `npm ci` and `npm run build` in `web/`, producing `web/dist`.
-2. `api-build`: `node:26-alpine`, `npm ci`, pgtyped-generated code already committed, `tsc` to `api/dist`, then `npm prune --omit=dev`.
-3. `runtime`: `node:26-alpine` with:
-   - `NODE_ENV=production`
-   - the compiled API, its production `node_modules`, the SQL migrations, and `web/dist` copied to `api/public`
+1. `dev`: installs both packages' dependencies with `npm ci` in `/app/api` and `/app/web`, as the `node` user, for the dev stack only.
+   The default build target is `runtime`, so a plain `docker build` never builds this stage.
+2. `web-build`: `npm ci` and `npm run build` in `web/`, producing `web/dist`.
+3. `api-build`: `npm ci`, `npm run build` (`tsc` to `api/dist`; pgtyped-generated code is already committed), then `npm prune --omit=dev`.
+4. `runtime`:
+   - `NODE_ENV=production` and `WORKDIR /app/api`
+   - under `/app/api`: `package.json`, the production `node_modules/`, `dist/`, `migrations/`, and the web build as `public/`
+   - the `deploy/` folder (`docker-compose.prod.yml`, `Caddyfile`, `deploy.sh`, `initdb/`) copied to the fixed path `/app/deploy`, so the server gets the deploy files of a release from its image
    - runs as the non-root `node` user
    - `EXPOSE 3000`
-   - `HEALTHCHECK` calling `/healthz`
-   - default command starts the server; the same image also runs `migrate` and `seed`
-   - the `deploy/` folder (`docker-compose.prod.yml`, `Caddyfile`, `deploy.sh`, `initdb/`) copied to the fixed path `/app/deploy`, so the server gets the deploy files of a release from its image
+   - `HEALTHCHECK` every 10 seconds: `node -e` fetches `http://127.0.0.1:${HTTP_PORT:-3000}/healthz`, because alpine has no `curl`
+   - default command `node dist/main.js`; the same image runs `migrate` with `node dist/cli/migrate.js`, and will run `seed` once it exists
 
-Node 26 is the current LTS line; pin the exact patch version in the `FROM` lines.
+Node 26 is the current LTS line; the exact patch is pinned in every `FROM` line.
 
 ### `.dockerignore`
 
-Excludes `node_modules`, `dist`, `.git`, `.env*`, `infra/`, `.adlc/` and test output, so the build context stays small and no secrets reach the image.
+Excludes `node_modules`, `dist`, `coverage`, `*.tsbuildinfo`, `.env*` and `.DS_Store` at any depth, plus `.git`, `.adlc/`, `.claude/`, `infra/`, `docs/`, `api/public/`, `api/test/` and `web/test/`.
+The build context stays small, and no secret or test file reaches the image.
 It must not exclude `deploy/`, because the image carries it.
+
+### `.gitattributes`
+
+Shell scripts and the `Dockerfile` are always checked out with LF line endings, so a Windows checkout cannot break them.
+`deploy/initdb/01-roles.sh` must stay executable (mode `100755` in git): the Postgres entrypoint runs an executable `.sh` file but sources one that is not.
+`deploy/deploy.sh` is committed executable too, and the deploy command runs it with `bash` either way.
 
 ### `docker-compose.yml` (repository root, for local use and reviewers)
 
-- `db`: `postgres:18-alpine` with a named volume, `deploy/initdb` mounted into `/docker-entrypoint-initdb.d`, and a `pg_isready` healthcheck.
-- `migrate`: builds from the `Dockerfile` and runs migrations and the permission sync; depends on `db` being healthy.
-- `app`: builds from the `Dockerfile`, published on `localhost:3000`; depends on `migrate` finishing successfully.
-- Reads a local `.env` (committed as `.env.example`).
+- Project name `pos-system`.
+- `db`: `postgres:18.7-alpine` with the named volume `db-data` at `/var/lib/postgresql` (the Postgres 18 image keeps its data in a versioned folder under that path), `deploy/initdb` mounted read-only into `/docker-entrypoint-initdb.d`, and a `pg_isready -h 127.0.0.1` healthcheck.
+  The healthcheck goes over TCP because, while the init scripts run, Postgres listens only on its socket and would look ready too early.
+- `migrate`: builds the image (tagged `pos-system:local`) and runs `node dist/cli/migrate.js` once `db` is healthy.
+- `app`: the same image, published on `127.0.0.1:3000` only; starts once `migrate` exits successfully.
+- Every service lists its variables in its own `environment:` block, filled from `.env`; no service loads `.env` whole, so `app` never sees the migrator password and `migrate` never sees the token key.
+- The two database URLs are built in the compose file from the passwords.
+  A missing required variable stops Compose with "copy .env.example to .env".
 
-A reviewer runs `docker compose up --build` and opens `http://localhost:3000`.
+A reviewer runs `cp .env.example .env`, then `docker compose up --build`, and opens `http://localhost:3000`.
+The Compose plugin (`docker compose`) and standalone `docker-compose` both work.
+
+### `.env.example`
+
+Every value in it is public and for local use only: `APP_ENV=local`, `LOG_LEVEL`, `HTTP_PORT`, `PUBLIC_ORIGIN=http://localhost:3000`, `DB_MAX_CONNS`, `ACCESS_TOKEN_TTL`, three local database passwords, and a labelled development `TOKEN_SIGNING_KEY`.
+The app refuses that key when `APP_ENV=prod`, so it can never sign production tokens.
+
+### `docker-compose.dev.yml` (repository root, hot reload)
+
+`docker compose -f docker-compose.dev.yml up --build` runs the code from the working tree and reloads it on every save.
+
+- Project name `pos-dev`, with its own volumes, so it never shares a database or containers with the reviewer stack.
+- `db` is the same as in `docker-compose.yml`.
+  Its port is not published, so pgtyped runs inside the stack: `docker compose -f docker-compose.dev.yml exec api npm run db:generate`.
+- `migrate`, `api` and `web` run the `dev` stage (`pos-system:dev`, with `init: true`), with the source bind-mounted (`./api` at `/app/api`, `./web` at `/app/web`) and `node_modules` in the named volumes `api-node-modules` and `web-node-modules`.
+- `migrate` runs `npm run migrate`; `api` runs `npm run dev` (tsx watch) on port 3000 once `migrate` succeeds; `web` runs Vite on port 5173 with `--host 0.0.0.0`.
+  Both ports are published on `127.0.0.1` only.
+- `web` proxies `/api`, `/healthz` and `/readyz` to `http://api:${HTTP_PORT:-3000}` through `VITE_API_PROXY_TARGET`; outside Docker the target defaults to `http://localhost:3000`.
+- Each container runs `npm ci` on start only when `package-lock.json` is newer than the install in its volume, so a new dependency needs no image rebuild.
+- `api` and `web` set `CHOKIDAR_USEPOLLING=true`.
+  On macOS bind mounts (seen on Colima), rename-style saves from editors and git reach neither tsx nor Vite without polling; idle CPU stays under 1% per container.
+- `api` sets `PUBLIC_ORIGIN=http://localhost:5173`, because people open the Vite server in this stack.
 
 ### `deploy/docker-compose.prod.yml`
 
-Same services as the local file, with these differences:
+Compose project `pos`, with the same start order as locally: `db` healthy, then `migrate` completes successfully, then `app` starts, so a failed migration never starts a new app.
 
-- `app` and `migrate` use `image: ${ECR_REPOSITORY_URL}:${IMAGE_TAG}` instead of `build`.
-- `caddy` (`caddy:2-alpine`) is added, publishing 80 and 443, with `./Caddyfile` mounted and `/data/caddy` for certificates.
-- `db` stores data in the bind mount `/data/postgres` instead of a named volume.
-- No service except Caddy publishes a port.
-- Every service uses `logging: driver: awslogs` with `awslogs-group: /<project_name>/prod` and its own stream prefix.
-- `restart: unless-stopped` on `caddy`, `app` and `db`.
-- `migrate` depends on `db` being healthy, and `app` depends on `migrate` completing successfully, so a failed migration never starts a new app.
+- `db`: `postgres:18.7-alpine`, the same tag as locally, with data in the bind mount `/data/postgres` at `/var/lib/postgresql`, `./initdb` mounted read-only, the same TCP healthcheck, and `restart: unless-stopped`.
+  Nothing chowns `/data/postgres`: the Postgres entrypoint starts as root and creates and chowns its data folder itself.
+- `migrate`: `${ECR_REPOSITORY_URL}:${IMAGE_TAG}` running `node dist/cli/migrate.js`, with no restart policy.
+- `app`: the same image, `restart: unless-stopped`, and `stop_grace_period: 30s`, longer than the app's 10-second `SHUTDOWN_TIMEOUT` drain.
+- `caddy`: `caddy:2.11.9-alpine`, `restart: unless-stopped`, publishing 80 and 443, with `./Caddyfile` mounted read-only and `/data/caddy` mounted at `/data`.
+  The image sets `XDG_DATA_HOME=/data`, so certificates and the ACME (Automatic Certificate Management Environment) account key land on the data volume; `/config`, Caddy's autosaved copy of its config, is not kept.
+  A `pos.caddyfile-sha256` label is set from `CADDYFILE_SHA256`, which `deploy.sh` exports (it is not in `.env`), so a changed Caddyfile changes the label and `up -d` recreates `caddy` with the new file.
+- No service except `caddy` publishes a port.
+- Each service lists its variables in its own `environment:` block; a missing required value stops Compose with "run deploy.sh to write .env".
+- Every service logs with `driver: awslogs`, `awslogs-group: ${LOG_GROUP}`, `awslogs-region: ${AWS_REGION}`, and `tag: <service>/{{.ID}}` as the stream name, because Docker's `awslogs` driver has no stream prefix option.
 
 ### `deploy/Caddyfile`
 
 ```
 {$APP_DOMAIN} {
-    tls {
-        issuer acme {
-            dir https://acme-v02.api.letsencrypt.org/directory
-        }
-    }
-    encode zstd gzip
-    header Strict-Transport-Security "max-age=31536000; includeSubDomains"
-    reverse_proxy app:3000
+	tls {
+		issuer acme {
+			dir https://acme-v02.api.letsencrypt.org/directory
+		}
+	}
+	encode zstd gzip
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	reverse_proxy app:3000
 }
 ```
 
 `APP_DOMAIN` comes from the `.env` written by `deploy.sh`, which reads it from SSM.
 The `tls` block makes Let's Encrypt the only issuer, because the CAA record in `dns.tf` refuses any other, and Caddy's defaults can fall back to ZeroSSL.
-The `header` line adds `Strict-Transport-Security` (proposed), so browsers use HTTPS only for this domain.
-The other security headers (`X-Content-Type-Options`, `Referrer-Policy`, `X-Frame-Options`, `Content-Security-Policy`) are set by the app's `securityHeaders` middleware (proposed), so they are the same locally and in production.
+`caddy validate` and `caddy adapt` on `caddy:2.11.9-alpine` confirm that the Let's Encrypt directory is the only issuer and that the `zstd` encoder is present.
+The file is indented with tabs, as `caddy fmt` writes it.
+The `header` line adds `Strict-Transport-Security`, so browsers use HTTPS only for this domain.
+The other security headers (`X-Content-Type-Options`, `Referrer-Policy`, `X-Frame-Options`, `Content-Security-Policy`) are set by the app's `securityHeaders` middleware, so they are the same locally and in production.
 
 ### `deploy/initdb/01-roles.sh`
 
@@ -385,47 +439,60 @@ The full script is in `docs/database-design.md` (Database roles).
 
 ### `deploy/deploy.sh`
 
-The deploy's SSM command gets `deploy.sh` onto the server before running it:
+The deploy's SSM command gets `deploy.sh` onto the server before running it.
+It is POSIX `sh`, because the server's `/bin/sh` is dash, and it holds only the commit SHA and checked repository variables, never a secret, because SSM records command parameters.
 
-1. Logs Docker in to ECR with the instance role and pulls `<ECR_REPOSITORY_URL>:<sha>`.
+1. Exports `AWS_REGION`, logs Docker in to ECR with the instance role, and pulls `<ECR_REPOSITORY_URL>:<sha>`.
 2. Copies `/app/deploy` out of that image into `/opt/pos` with `docker create` and `docker cp`, then removes the stopped container.
-3. Runs `/opt/pos/deploy.sh <sha>`.
+3. Runs `bash /opt/pos/deploy.sh <sha>`.
 
 So the compose file, Caddyfile and scripts always match the image they deploy, and the server never needs a git checkout or a bucket.
 
-`deploy.sh` takes the commit SHA as its argument:
+`deploy.sh` takes the full 40-character commit SHA as its only argument:
 
-1. Fails fast if `/data` is not a mounted volume, so Postgres never writes to the root disk by mistake.
-2. Reads every parameter under `/<project_name>/prod/`, secrets and settings alike, and writes `/opt/pos/.env` with mode `600`, naming each variable after the last part of the parameter name.
+1. Fails fast unless `/data` is a mounted volume, so Postgres never writes to the root disk by mistake, and unless `/data/postgres`, `/data/caddy`, the compose file and the Caddyfile exist.
+2. Takes the region from `AWS_REGION`, or else from the instance metadata (IMDSv2).
+3. Reads every parameter under `/techzu-pos/prod` (override with `POS_SSM_PATH`), secrets and settings alike.
+   It refuses database passwords that are not letters and digits, because they go into URLs.
+4. Writes `/opt/pos/.env` with mode `600`, through a temporary file, naming each variable after the last part of the parameter name.
+   Every value is in single quotes, so Compose never expands a `$` in it; a name that is not `[A-Z][A-Z0-9_]*`, or a value with a quote or a line break, stops the deploy.
    It adds only `IMAGE_TAG` (its argument) and the two database URLs, built from the passwords.
-3. Logs Docker in to ECR with the instance role.
-4. Runs `docker compose -f docker-compose.prod.yml pull` first and only then `up -d --remove-orphans`, without stopping any service beforehand, so the old containers keep serving until the new images are on disk.
-5. Polls `https://<fqdn>/readyz` for up to 2 minutes and exits non-zero if it never answers, which fails the GitHub Actions job.
-6. Runs `docker image prune -f` to keep the disk clean.
+5. Logs Docker in to ECR with the instance role, and exports `CADDYFILE_SHA256` for the Caddy label.
+6. Runs `compose pull` first and only then `up -d --remove-orphans`, without stopping any service beforehand, so the old containers keep serving until the new images are on disk.
+7. Polls `https://<APP_DOMAIN>/readyz` every 5 seconds for up to 2 minutes; if it never answers, it prints `compose ps` and exits non-zero, which fails the GitHub Actions job.
+8. Once `/readyz` answers, removes the local images of the ECR repository except the current tag and the one the app ran before, then runs `docker image prune -f`, so old releases do not fill the 12 GB root disk.
 
-Rollback is the same SSM command with an older SHA; it works for any of the last 10 images kept in ECR.
+It never prints a secret.
+
+Rollback is the Deploy workflow with an older commit of `main` as its `sha`; it works for any of the last 10 images kept in ECR.
+A rollback redeploys the older image, code and deploy files, but never the older schema: migrations only go forward.
+The older image's `migrate` finds nothing new to apply and exits successfully, and the older app runs against the newer schema.
+So roll back only across migrations the older code still works with (expand steps, see `docs/database-design.md`, "Expand and contract"); otherwise fix forward with a new commit.
 
 ### Application environment (written to `.env` by `deploy.sh`)
 
 | Variable | Value in prod | Comes from |
 |---|---|---|
 | `APP_ENV` | `prod` | SSM setting |
-| `LOG_LEVEL` | `info` | SSM setting |
+| `LOG_LEVEL` | `info`; `debug` is refused when `APP_ENV=prod` | SSM setting |
 | `HTTP_PORT` | `3000` | SSM setting |
 | `PUBLIC_ORIGIN` | `https://pos.afnanio.top` | SSM setting |
 | `APP_DOMAIN` | `pos.afnanio.top`, read by the Caddyfile | SSM setting |
 | `DB_MAX_CONNS` | `10` | SSM setting |
 | `ACCESS_TOKEN_TTL` | `1h` | SSM setting |
 | `ECR_REPOSITORY_URL` | the ECR repository URL, read by the compose file | SSM setting |
+| `LOG_GROUP` | `/techzu-pos/prod`, read by the compose file's log driver | SSM setting |
+| `AWS_REGION` | `ap-south-1`, read by the compose file's log driver | SSM setting |
 | `POSTGRES_PASSWORD` | 32 letters and digits | SSM secret |
 | `MIGRATOR_PASSWORD` | 32 letters and digits | SSM secret |
 | `APP_DB_PASSWORD` | 32 letters and digits | SSM secret |
-| `SEED_ADMIN_PASSWORD` | 32 letters and digits, read by the seed command | SSM secret |
+| `SEED_ADMIN_PASSWORD` | 32 letters and digits, for the seed command; no service receives it yet | SSM secret |
 | `TOKEN_SIGNING_KEY` | a PKCS#8 PEM, base64-encoded on one line | SSM secret |
 | `IMAGE_TAG` | the commit SHA | `deploy.sh` argument |
 | `DATABASE_URL` | `postgres://pos_app:<APP_DB_PASSWORD>@db:5432/pos` | built by `deploy.sh` |
 | `MIGRATOR_DATABASE_URL` | `postgres://migrator:<MIGRATOR_PASSWORD>@db:5432/pos` | built by `deploy.sh` |
 
+`.env` feeds Compose's variable substitution only; each container receives just the variables its `environment:` block names.
 Database connections never leave the host's Docker network, so they run without TLS (`sslmode=disable`) to the `db` host.
 If the database ever moves off the host, TLS becomes required.
 
@@ -436,26 +503,58 @@ If the database ever moves off the host, TLS becomes required.
 `AWS_REGION`, `AWS_DEPLOY_ROLE_ARN`, `ECR_REPOSITORY_URL`, `EC2_INSTANCE_ID`, each copied from the Terraform output of the same meaning (section 4, `outputs.tf`).
 No AWS secrets are needed, because the workflow uses OIDC.
 
+### Action pins
+
+Every action is pinned to a full commit SHA, with its version in a comment beside it:
+
+| Action | Version | Used in |
+|---|---|---|
+| `actions/checkout` | v7.0.1 | both workflows, always with `persist-credentials: false` |
+| `actions/setup-node` | v7.1.0 | `ci.yml` (Node 26, npm cache per package) |
+| `hashicorp/setup-terraform` | v4.0.1 | `ci.yml` |
+| `aws-actions/configure-aws-credentials` | v6.3.0 | `deploy.yml` |
+| `aws-actions/amazon-ecr-login` | v2.2.0 | `deploy.yml` |
+
 ### `.github/workflows/ci.yml` (every pull request and push)
 
-1. `npm ci` for `api/` and `web/`.
-2. Lint and typecheck both.
-3. Start a `postgres:18` service container, run `npm run migrate`, then `npm run db:generate`, and fail if the generated files differ from what is committed (the pgtyped drift check).
-   This service container exists only for the drift check.
-4. Run the API tests, including the concurrent sales tests; they start their own Postgres with testcontainers, the same way as locally, not the service container.
-5. Build the web app.
-6. `terraform fmt -check -recursive` and `terraform validate` (with `-backend=false`) in `infra/terraform`.
+Seven jobs run in parallel with `permissions: contents: read`; on a pull request, a newer push cancels the older run.
 
-### `.github/workflows/deploy.yml` (push to `main`, after CI passes)
+| Job | Runner | What it checks |
+|---|---|---|
+| `api` | `ubuntu-24.04` | `npm ci`, lint, typecheck, tests, build; the tests start their own Postgres with testcontainers, the same way as locally |
+| `web` | `ubuntu-24.04` | `npm ci`, lint, typecheck, tests, build |
+| `drift` | `ubuntu-24.04` | the pgtyped drift check, below |
+| `image` | `ubuntu-24.04-arm` | builds the `runtime` and `dev` targets without pushing, then runs `docker compose config` on `docker-compose.yml` and `docker-compose.dev.yml` with `.env.example` copied to `.env` |
+| `pins` | `ubuntu-24.04` | fails unless `docker-compose.yml`, `docker-compose.dev.yml`, `deploy/docker-compose.prod.yml`, `api/test/support/postgres.ts` and `ci.yml` all pin one and the same `postgres:` tag (Markdown and HTML files are skipped) |
+| `scripts` | `ubuntu-24.04` | `shellcheck` on every tracked `*.sh` file |
+| `terraform` | `ubuntu-24.04` | Terraform 1.16.4: `fmt -check -recursive`, `init -backend=false -lockfile=readonly`, `validate` in `infra/terraform` |
 
-1. `permissions: id-token: write, contents: read`.
-2. Runs on a native ARM runner (`ubuntu-24.04-arm`) so the image is built for the ARM instance without emulation.
-3. `aws-actions/configure-aws-credentials` with `role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}`.
-4. `aws-actions/amazon-ecr-login`.
-5. `docker build` and push `${ECR_REPOSITORY_URL}:${GITHUB_SHA}`; the image includes `deploy/`.
-6. `aws ssm send-command` with `AWS-RunShellScript` on `EC2_INSTANCE_ID`; the command pulls the image by SHA, copies `deploy/` out of it with `docker create` and `docker cp`, and runs `deploy.sh $GITHUB_SHA` (section 5, `deploy/deploy.sh`).
-7. Waits for the command and prints its output; the job fails if `deploy.sh` fails.
-8. `concurrency: deploy-prod` so two deploys never run at once.
+The drift check:
+
+1. Starts a `postgres:18.7-alpine` service container, which exists only for this check.
+2. Creates the roles by running `deploy/initdb/01-roles.sh` inside it with `docker exec`, because a service container cannot mount files.
+3. Runs `npm run migrate` as `migrator`, then `npm run db:generate` as `pos_app`.
+4. Fails if any `src/**/*.queries.ts` file changed or is new, or has no `.sql` file beside it.
+
+### `.github/workflows/deploy.yml` (started by hand, on `main` only)
+
+Nothing deploys on a push or a merge.
+A person opens Actions, then Deploy, then "Run workflow" on `main`.
+
+1. `workflow_dispatch` with one optional input, `sha`: left empty, it deploys the tip of `main`; a full 40-character lowercase SHA of an older commit of `main` is a rollback.
+2. The job runs only when started on `refs/heads/main`; the deploy role's trust policy is the real boundary.
+   It has no `environment:`, because that would change the OIDC subject the role trusts.
+3. `permissions: id-token: write, contents: read`; a native ARM runner (`ubuntu-24.04-arm`), so the image is built for the ARM instance without emulation; `concurrency: deploy-prod` without cancelling, so two deploys never overlap.
+4. Checks the repository variables against strict patterns (a region name, an instance ID, an ECR URL in that same region) before any of them goes into a command.
+5. Resolves the commit: it must exist and be an ancestor of `origin/main`; a SHA other than the tip is a rollback.
+6. Assumes the deploy role with `aws-actions/configure-aws-credentials` and `role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}`.
+7. Asks ECR for the tag with `aws ecr batch-get-image`.
+   If the image exists, the build is skipped and that image is deployed again, because tags are immutable and a second push would fail.
+   If it is missing, a rollback fails (a rollback never builds old code), and any other failure code from ECR fails the job.
+8. Otherwise logs in with `aws-actions/amazon-ecr-login`, checks the checkout is that SHA, builds the `runtime` target with an `org.opencontainers.image.revision` label, and pushes `${ECR_REPOSITORY_URL}:<sha>`; the image includes `deploy/`.
+9. Runs `aws ssm send-command` with `AWS-RunShellScript` on `EC2_INSTANCE_ID` and an `executionTimeout` of 540 seconds; the command pulls the image by SHA, copies `deploy/` out of it, and runs `deploy.sh <sha>` (section 5, `deploy/deploy.sh`).
+10. Polls `aws ssm get-command-invocation` every 10 seconds for up to 10 minutes, instead of `aws ssm wait`, which gives up after about 100 seconds.
+    It then prints the server's output and errors, and fails the job unless the status is `Success`.
 
 ## 7. First-time setup, in order
 
@@ -464,11 +563,19 @@ No AWS secrets are needed, because the workflow uses OIDC.
 3. In `infra/terraform`: `terraform init`, `terraform plan`, review it, then `terraform apply`.
    This one apply creates the Elastic IP, the instance and the DNS record in the right order.
 4. Copy the four outputs into the GitHub repository variables listed in section 6.
-5. Push a commit to `main`.
-   The first deploy starts Caddy, which gets the Let's Encrypt certificate on its own.
-6. Check `https://pos.afnanio.top/healthz` and `/readyz`.
+5. Protect `main` in GitHub (a branch protection rule or ruleset) before the first deploy, because the deploy role trusts any workflow run on `main` and can run commands as root on the server through SSM.
+6. In GitHub, open Actions, then Deploy, then "Run workflow" on `main`, with `sha` left empty.
+   The first deploy starts Caddy, which gets the Let's Encrypt certificate on its own; `deploy.sh` waits up to 2 minutes for `/readyz`.
+7. Check `https://pos.afnanio.top/healthz` and `/readyz`.
    How the HQ admin and demo users get into prod is not decided yet (section 10).
-7. Optional: run the `ssm_session_command` output, then `docker compose ps` in `/opt/pos` to look around.
+8. Optional: run the `ssm_session_command` output, then `cd /opt/pos && docker compose -f docker-compose.prod.yml ps` to look around.
+
+If the first database initialisation fails (for example on a bad password), Postgres has already created its data folder and never runs `01-roles.sh` again.
+Recover only while the database holds no real data, because there are no backups:
+
+1. Stop the stack over SSM: `cd /opt/pos && docker compose -f docker-compose.prod.yml down`.
+2. Empty the data folder: `find /data/postgres -mindepth 1 -delete`.
+3. Fix the cause, then start the Deploy workflow again.
 
 Replacing the instance, for example to pick up a newer AMI or an edited `cloud-init.yaml.tftpl` (both are ignored on a normal plan):
 
@@ -476,7 +583,7 @@ Replacing the instance, for example to pick up a newer AMI or an edited `cloud-i
 2. Run `terraform apply -replace=aws_instance.app`.
    Terraform stops the old instance before it detaches the data volume (`stop_instance_before_detaching`), then attaches the volume to the new one.
 3. The new instance's first boot finds the existing filesystem, mounts it without formatting, and keeps the data and certificates.
-4. Copy the new `instance_id` output into `EC2_INSTANCE_ID`, then deploy again.
+4. Copy the new `instance_id` output into `EC2_INSTANCE_ID`, then start the Deploy workflow again.
 
 Teardown: `terraform destroy` stops at the data volume because of `prevent_destroy`.
 That is intentional; remove the lifecycle block only when you really want to delete the database.
@@ -503,24 +610,24 @@ These belong in the scaling plan of the architecture document, not in this build
 - A WAF and rate limiting at the edge.
 - Separate dev and prod environments.
 
-## 10. Known follow-ups for the deploy REQ
+## 10. Known follow-ups
 
-The Terraform is built; these are open for the change that builds `deploy/`, the `Dockerfile` and the workflows.
+Open after the foundation build, 2026-11-25:
 
-- **Re-running a deploy:** ECR tags are immutable, so pushing the same SHA again can be rejected.
-  Push a new commit instead, or skip the push when the tag exists (that needs `ecr:DescribeImages` on the deploy role).
+- **Checks only a real deploy can make:** the SSM parameter read, the ECR login on the server, the `awslogs` stream names, the Let's Encrypt certificate, `/readyz` reached from the server through its own Elastic IP, and what the SSM shell provides (such as `HOME`) for `docker login`.
+  The first deploy started by hand confirms them.
 - **Demo data in prod:** nothing runs `npm run seed` on the server, and no SSM parameter holds the outlet users' passwords.
   Decide whether seed runs once by hand over SSM, or prod has no demo data.
-- **Postgres 18 data path:** the `postgres:18` image changed where its data lives under `/var/lib/postgresql`; check the image docs and name the container path in the prod compose file.
-- **Database variables in prod compose:** `db` needs `POSTGRES_PASSWORD`, `MIGRATOR_PASSWORD`, `APP_DB_PASSWORD` and `POSTGRES_DB=pos` for `01-roles.sh`.
-  That script runs only on an empty volume, so a password changed in SSM never reaches the database roles; rotation is manual.
-- **Stop grace period:** the app drains for `SHUTDOWN_TIMEOUT` (10s), the same as Docker's default stop timeout, so set a longer `stop_grace_period` on `app`.
+- **Password rotation:** `01-roles.sh` runs only on an empty volume, so a password changed in SSM never reaches the database roles; rotation is manual.
 - **Rollback window:** a rollback can only reach one of the last 10 images ECR keeps.
-- **Shellcheck in CI:** the rules require `shellcheck` on shell scripts, but no CI step runs it yet.
 - **Backups:** none, by decision, because this is a test deployment.
   A real one would add EBS snapshots, a nightly `pg_dump`, or both.
-- **Image pins:** only Node is pinned to a patch version; pin `postgres` and `caddy` exactly, and use the same Postgres tag locally and in prod.
-- **`.dockerignore`:** add `.claude/`, as `.claude/rules/infra.md` asks.
 - **AWS CLI version:** cloud-init installs the latest AWS CLI v2; pin a version if a release ever breaks `deploy.sh`.
-- **Caddy issuer syntax:** check the `tls` block in the Caddyfile against the pinned Caddy version.
-- **Frontend path:** `docs/frontend-engineering.md` calls `GET /v1/me` in one place where the rest of the docs say `/api/v1/me`.
+- **HTTP/3:** Caddy advertises HTTP/3, which runs over UDP 443, but the security group opens only TCP 443, so browsers try it, fail, and fall back to HTTP/2.
+  Later, either open UDP 443 in `network.tf` or set `protocols h1 h2` in the Caddyfile's global options.
+- **Health check log lines:** every `/healthz` probe writes a request log line, one every 10 seconds per app container, and those lines go to CloudWatch.
+  Skip or sample health checks in `requestLog` if the noise or the cost matters.
+- **Postgres memory settings:** `docs/database-design.md` proposes `-c` flags for the 2 GiB host (`max_connections = 40`, `shared_buffers = 256MB` and more); the production compose file does not pass them yet, so Postgres runs with the image defaults.
+- **npm audit (accepted by the user, 2026-11-25):** node-pg-migrate 9.0.0 pulls glob and minimatch with 3 moderate advisories; it runs only in the one-off `migrate` container, over fixed paths.
+  The dev-only `@pgtyped/cli` pulls tinypool (2 critical), and testcontainers brings moderate ones; neither is in the image.
+  Check again when upstream releases fixes.
