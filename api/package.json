@@ -1,0 +1,48 @@
+{
+  "name": "pos-api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "tsx watch --clear-screen=false src/main.ts | pino-pretty",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/main.js",
+    "lint": "eslint . && prettier --check .",
+    "format": "prettier --write .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "migrate": "tsx src/cli/migrate.ts",
+    "db:generate": "pgtyped -c pgtyped.config.json",
+    "seed": "echo 'Nothing to seed yet: seed data arrives with the database schema and services.'"
+  },
+  "dependencies": {
+    "@pgtyped/runtime": "^2.4.2",
+    "argon2": "^0.45.2",
+    "express": "^5.3.0",
+    "jose": "^6.2.18",
+    "node-pg-migrate": "^9.0.0",
+    "pg": "^8.23.1",
+    "pino": "^10.4.0",
+    "uuid": "^14.0.3",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@pgtyped/cli": "^2.4.3",
+    "@testcontainers/postgresql": "^12.2.2",
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.6.7",
+    "@types/pg": "^8.23.1",
+    "@types/supertest": "^7.2.1",
+    "eslint": "^10.15.0",
+    "pino-pretty": "^13.2.0",
+    "prettier": "^3.10.1",
+    "supertest": "^7.3.2",
+    "tsx": "^4.23.15",
+    "typescript": "~5.9",
+    "typescript-eslint": "^8.74.0",
+    "vitest": "^5.1.1"
+  }
+}
