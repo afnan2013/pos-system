@@ -1,3 +1,4 @@
+import { hasProperty } from '../has-property.js';
 import { AppError, ErrorKind } from './app-error.js';
 
 const MAX_CAUSE_DEPTH = 32;
@@ -37,5 +38,5 @@ export function withTitle(target: AppError, title: string): AppError {
 }
 
 function hasName(link: unknown, name: string): boolean {
-  return typeof link === 'object' && link !== null && 'name' in link && link.name === name;
+  return hasProperty(link, 'name') && link.name === name;
 }

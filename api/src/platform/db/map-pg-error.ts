@@ -1,5 +1,6 @@
 import { AppError, ErrorKind, unavailable, unexpected } from '../errors/app-error.js';
 import { problemSpecs } from '../errors/error-kind.js';
+import { hasProperty } from '../has-property.js';
 
 const UNAVAILABLE_SQLSTATES = new Set([
   '40001',
@@ -29,8 +30,7 @@ const CONNECTION_ERROR_MESSAGES = [
 ];
 
 function errorCode(err: unknown): string | undefined {
-  if (typeof err !== 'object' || err === null || !('code' in err)) return undefined;
-  return typeof err.code === 'string' ? err.code : undefined;
+  return hasProperty(err, 'code') && typeof err.code === 'string' ? err.code : undefined;
 }
 
 function isConnectionError(err: unknown, code: string | undefined): boolean {

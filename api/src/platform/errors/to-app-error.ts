@@ -1,3 +1,4 @@
+import { hasProperty } from '../has-property.js';
 import { AppError, unexpected, validation } from './app-error.js';
 import { ErrorKind, problemSpecs } from './error-kind.js';
 
@@ -29,7 +30,7 @@ export function toAppError(err: unknown): AppError {
 }
 
 function bodyParserType(err: unknown): string | undefined {
-  return err instanceof Error && 'type' in err && typeof err.type === 'string'
+  return err instanceof Error && hasProperty(err, 'type') && typeof err.type === 'string'
     ? err.type
     : undefined;
 }

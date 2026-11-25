@@ -1,4 +1,5 @@
 import type { Request, RequestHandler } from 'express';
+import { hasProperty } from '../has-property.js';
 import { currentRequestContext } from '../logger/request-context.js';
 
 export const UNMATCHED_ROUTE = 'unmatched';
@@ -26,19 +27,18 @@ export function routeOf(req: Request): string | undefined {
 
 export function allowedMethods(req: Request): string[] {
   const route: unknown = req.route;
-  if (!isObject(route) || !isObject(route['methods'])) return [];
-  const methods = Object.entries(route['methods'])
-    .filter(([method, enabled]) => enabled === true && method !== '_all')
-    .map(([method]) => method.toUpperCase());
+  const enabled: unknown = hasProperty(route, 'methods') ? route.methods : undefined;
+  if (typeof enabled !== 'object' || enabled === null) return [];
+  const methods = Object.keys(enabled)
+    .filter(
+      (method) => method !== '_all' && hasProperty(enabled, method) && enabled[method] === true,
+    )
+    .map((method) => method.toUpperCase());
   if (methods.includes('GET') && !methods.includes('HEAD')) methods.push('HEAD');
   return methods;
 }
 
 function matchedPath(req: Request): string | undefined {
   const route: unknown = req.route;
-  return isObject(route) && typeof route['path'] === 'string' ? route['path'] : undefined;
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
+  return hasProperty(route, 'path') && typeof route.path === 'string' ? route.path : undefined;
 }
